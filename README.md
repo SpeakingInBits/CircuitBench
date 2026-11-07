@@ -48,10 +48,14 @@ it is not found.
 
 ## Release it
 
-The Release workflow builds the firmware, runs the tests and publishes a GitHub release with the
-`.vsix`. Run it from the Actions tab on `main`, and choose what kind of change the release holds.
-Pull requests that change the packaging build the `.vsix` without releasing it, and the file is
-attached to the workflow run.
+The Release workflow builds the firmware, runs the tests, publishes a GitHub release with the
+`.vsix` and publishes the same `.vsix` to the Visual Studio Marketplace. Run it from the Actions tab
+on `main`, and choose what kind of change the release holds. Pull requests that change the packaging
+build the `.vsix` without releasing it, and the file is attached to the workflow run.
+
+The Marketplace step needs no token. It signs in with a Trusted Publishing policy on the
+`SpeakingInBits` publisher, which names `release.yml`, so renaming that file means updating the
+policy. If the step fails, re-run it from the workflow run.
 
 ## Licence
 

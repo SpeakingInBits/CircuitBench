@@ -21,7 +21,7 @@ cp ../firmware/circuitpython/LICENSE_MicroPython firmware/LICENSE-micropython
 
 # Without these the package still builds, but the simulator can't run or its licences are missing.
 files=$("${vsce[@]}" ls --no-dependencies)
-for needed in LICENSE THIRD_PARTY_NOTICES.md firmware/firmware.wasm firmware/firmware.cjs libs/neopixel.mpy stubs/board-stubs/__init__.pyi webview/main.js; do
+for needed in LICENSE THIRD_PARTY_NOTICES.md images/icon.png firmware/firmware.wasm firmware/firmware.cjs libs/neopixel.mpy stubs/board-stubs/__init__.pyi webview/main.js; do
   if ! grep -qx "$needed" <<< "$files"; then
     echo "::error::The package is missing $needed." >&2
     exit 1
@@ -29,5 +29,7 @@ for needed in LICENSE THIRD_PARTY_NOTICES.md firmware/firmware.wasm firmware/fir
 done
 
 mkdir -p ../dist
+# The extension is in a subfolder of the repository, so its README's relative links need this base on the Marketplace.
 "${vsce[@]}" package "$version" --no-git-tag-version --no-update-package-json --no-dependencies \
+  --baseContentUrl https://github.com/SpeakingInBits/CircuitBench/blob/HEAD/extension \
   --out "../dist/circuit-bench-$version.vsix"

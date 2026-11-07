@@ -1,6 +1,7 @@
 name: Release
 
-# Run from the Actions tab: builds the firmware, packages the extension and publishes a GitHub release with the .vsix.
+# Run from the Actions tab: builds the firmware, packages the extension, publishes a GitHub release with the .vsix and
+# publishes the same .vsix to the Visual Studio Marketplace.
 on:
   workflow_dispatch:
     inputs:
@@ -87,6 +88,9 @@ jobs:
         run: choco install make --no-progress -y
 
       - name: Fetch the firmware's dependencies
+        env:
+          # Anonymous GitHub API calls from shared runners can hit the rate limit.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           git config --global core.longpaths true
           sh firmware/setup.sh
@@ -136,3 +140,28 @@ jobs:
         run: |
           # The install instructions come first, then GitHub's list of changes since the last release.
           gh release create "v$VERSION" dist/* --target "$GITHUB_SHA" --title "v$VERSION" --notes-file notes.md --generate-notes
+
+  # Signs in with the Trusted Publishing policy on the Marketplace publisher, which names this workflow file, so there's
+  # no token to store. Renaming this file means updating the policy. If this job fails, re-run it from the workflow run.
+  publish:
+    name: publish
+    needs: [version, release]
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: vsix
+          path: dist
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Publish to the Marketplace
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: npx --yes @vscode/vsce@4.1.0 publish --oidc --packagePath "dist/circuit-bench-$VERSION.vsix" --skip-duplicate
