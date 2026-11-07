@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- The source for extension/images/icon.png. The Marketplace doesn't accept SVG icons. -->
+  <defs>
+    <linearGradient id="board" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#11806c"/>
+      <stop offset="1" stop-color="#0a4f47"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="44" fill="url(#board)"/>
+  <g fill="none" stroke="#8ff0d2" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M76 128H42"/>
+    <path d="M76 98H64L46 80V60"/>
+    <path d="M76 158H64L46 176V196"/>
+    <path d="M180 128H214"/>
+    <path d="M180 98H192L210 80V60"/>
+    <path d="M180 158H192L210 176V196"/>
+    <path d="M128 76V42"/>
+    <path d="M128 180V214"/>
+  </g>
+  <g fill="#8ff0d2">
+    <circle cx="38" cy="128" r="12"/>
+    <circle cx="46" cy="54" r="12"/>
+    <circle cx="46" cy="202" r="12"/>
+    <circle cx="218" cy="128" r="12"/>
+    <circle cx="210" cy="54" r="12"/>
+    <circle cx="210" cy="202" r="12"/>
+    <circle cx="128" cy="38" r="12"/>
+    <circle cx="128" cy="218" r="12"/>
+  </g>
+  <rect x="72" y="72" width="112" height="112" rx="14" fill="#10202a" stroke="#8ff0d2" stroke-width="5"/>
+  <path d="M110 98V158L160 128Z" fill="#ffd60a" stroke="#ffd60a" stroke-width="10" stroke-linejoin="round"/>
+</svg>

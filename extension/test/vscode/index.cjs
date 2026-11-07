@@ -85,7 +85,7 @@ async function run() {
     const document = await vscode.workspace.openTextDocument(file);
     await vscode.window.showTextDocument(document, vscode.ViewColumn.One);
     await vscode.commands.executeCommand('circuitBench.open');
-    const extension = vscode.extensions.getExtension('speakinginbits.circuit-bench');
+    const extension = vscode.extensions.getExtension('SpeakingInBits.circuit-bench');
     const { session } = extension.exports;
     const catalog = await import(path.join(extension.extensionPath, 'shared', 'catalog.js').replace(/\\/g, '/').replace(/^([A-Z]):/, 'file:///$1:'));
     // A step that fails inside the page never answers, so give up rather than hang.
