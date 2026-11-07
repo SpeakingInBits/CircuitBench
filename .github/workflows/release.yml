@@ -88,6 +88,9 @@ jobs:
         run: choco install make --no-progress -y
 
       - name: Fetch the firmware's dependencies
+        env:
+          # Anonymous GitHub API calls from shared runners can hit the rate limit.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           git config --global core.longpaths true
           sh firmware/setup.sh
