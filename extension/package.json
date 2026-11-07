@@ -1,13 +1,14 @@
 {
-  "name": "metro-simulator",
-  "displayName": "Metro M0 Simulator",
-  "description": "Build circuits and test CircuitPython on a simulated Adafruit Metro M0 Express, without a physical board.",
+  "name": "circuit-bench",
+  "displayName": "Circuit Bench",
+  "description": "Build circuits and test code on simulated microcontroller boards. Runs CircuitPython for the Adafruit Metro M0 Express.",
+  "keywords": ["circuitpython", "adafruit", "simulator", "breadboard", "circuit"],
   "version": "0.1.0",
   "publisher": "speakinginbits",
   "type": "module",
   "private": true,
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/SpeakingInBits/ArduinoSimulatorVSCode" },
+  "repository": { "type": "git", "url": "https://github.com/SpeakingInBits/CircuitBench" },
   "engines": { "vscode": "^1.100.0" },
   "categories": ["Education", "Other"],
   "main": "./extension.cjs",
@@ -21,27 +22,27 @@
   "contributes": {
     "customEditors": [
       {
-        "viewType": "metroSim.diagram",
+        "viewType": "circuitBench.diagram",
         "displayName": "Circuit Diagram",
         "selector": [{ "filenamePattern": "circuit.json" }],
         "priority": "default"
       }
     ],
     "commands": [
-      { "command": "metroSim.open", "title": "Open Circuit Simulator", "category": "Metro Simulator" },
-      { "command": "metroSim.diagram", "title": "Show Circuit Diagram", "category": "Metro Simulator" },
-      { "command": "metroSim.run", "title": "Run on Simulator", "category": "Metro Simulator", "icon": "$(play)" },
-      { "command": "metroSim.stop", "title": "Stop Simulator", "category": "Metro Simulator", "icon": "$(debug-stop)" },
-      { "command": "metroSim.newProject", "title": "New Project from Example", "category": "Metro Simulator" },
-      { "command": "metroSim.addLibrary", "title": "Add Library to Project", "category": "Metro Simulator" },
-      { "command": "metroSim.setupEditor", "title": "Set Up CircuitPython Autocomplete", "category": "Metro Simulator" },
-      { "command": "metroSim.copyToBoard", "title": "Copy Project to CIRCUITPY Drive", "category": "Metro Simulator" },
-      { "command": "metroSim.export", "title": "Export Project", "category": "Metro Simulator" },
-      { "command": "metroSim.importPackage", "title": "Import Project Package", "category": "Metro Simulator" }
+      { "command": "circuitBench.open", "title": "Open Circuit Simulator", "category": "Circuit Bench" },
+      { "command": "circuitBench.diagram", "title": "Show Circuit Diagram", "category": "Circuit Bench" },
+      { "command": "circuitBench.run", "title": "Run on Simulator", "category": "Circuit Bench", "icon": "$(play)" },
+      { "command": "circuitBench.stop", "title": "Stop Simulator", "category": "Circuit Bench", "icon": "$(debug-stop)" },
+      { "command": "circuitBench.newProject", "title": "New Project from Example", "category": "Circuit Bench" },
+      { "command": "circuitBench.addLibrary", "title": "Add Library to Project", "category": "Circuit Bench" },
+      { "command": "circuitBench.setupEditor", "title": "Set Up CircuitPython Autocomplete", "category": "Circuit Bench" },
+      { "command": "circuitBench.copyToBoard", "title": "Copy Project to CIRCUITPY Drive", "category": "Circuit Bench" },
+      { "command": "circuitBench.export", "title": "Export Project", "category": "Circuit Bench" },
+      { "command": "circuitBench.importPackage", "title": "Import Project Package", "category": "Circuit Bench" }
     ],
     "menus": {
       "editor/title/run": [
-        { "command": "metroSim.run", "when": "resourceLangId == python", "group": "navigation" }
+        { "command": "circuitBench.run", "when": "resourceLangId == python", "group": "navigation" }
       ]
     }
   }

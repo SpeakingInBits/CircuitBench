@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests the extension against a built firmware and packages it as dist/metro-simulator-<version>.vsix.
+# Tests the extension against a built firmware and packages it as dist/circuit-bench-<version>.vsix.
 #
 #   VERSION=1.2.3 packaging/package.sh
 #
@@ -30,4 +30,4 @@ done
 
 mkdir -p ../dist
 "${vsce[@]}" package "$version" --no-git-tag-version --no-update-package-json --no-dependencies \
-  --out "../dist/metro-simulator-$version.vsix"
+  --out "../dist/circuit-bench-$version.vsix"

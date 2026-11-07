@@ -1,4 +1,4 @@
-# Metro M0 Simulator
+# Circuit Bench
 
 Build circuits and test CircuitPython in VS Code, without a physical board. The simulator runs
 real CircuitPython 10.3.1 compiled to WebAssembly, set up to behave like an Adafruit Metro M0
@@ -6,9 +6,9 @@ Express, so your `code.py` can move to a real board unchanged.
 
 ## Get started
 
-1. Run **Metro Simulator: New Project from Example** from the Command Palette.
-2. Open `code.py`, then run **Metro Simulator: Run on Simulator**.
-3. Use **Metro Simulator: Set Up CircuitPython Autocomplete** for suggestions as you type. This
+1. Run **Circuit Bench: New Project from Example** from the Command Palette.
+2. Open `code.py`, then run **Circuit Bench: Run on Simulator**.
+3. Use **Circuit Bench: Set Up CircuitPython Autocomplete** for suggestions as you type. This
    needs the Python extension.
 
 Each project is a folder holding `code.py`, your circuit in `circuit.json`, and a `lib` folder.
@@ -89,23 +89,25 @@ L293D, batteries, multimeters and notes.
 
 ## Export and import
 
-Press **Export** in the builder or run **Metro Simulator: Export Project**, then choose what to save.
+Press **Export** in the builder or run **Circuit Bench: Export Project**, then choose what to save.
 
 | Export | What you get |
 |---|---|
-| Project package | A `.metrosim` file holding the program, circuit and libraries |
+| Project package | A `.circuitbench` file holding the program, circuit and libraries |
 | Circuit picture | The canvas as PNG or SVG, including what is showing if a program is running |
 | Circuit diagram | The schematic as PNG or SVG, on a white page |
 | Parts list | A CSV file of what to gather, for a spreadsheet |
 
-To open a project package, press **Import** or run **Metro Simulator: Import Project Package**, then
+To open a project package, press **Import** or run **Circuit Bench: Import Project Package**, then
 choose a folder. It creates a new project folder and opens it. A package only holds project files: it
 cannot include VS Code settings or tasks, it cannot write outside the new folder, and nothing in it
 runs until you press **Run**, which only runs it on the simulated board.
 
+Packages saved as `.metrosim` by earlier versions still open.
+
 ## Circuit diagram
 
-Press **Diagram** in the builder, run **Metro Simulator: Show Circuit Diagram**, or open
+Press **Diagram** in the builder, run **Circuit Bench: Show Circuit Diagram**, or open
 `circuit.json` to see the circuit as a schematic. It shows how parts are joined rather than where
 they sit, so breadboards disappear and only the board pins in use are drawn. Power and ground are
 marked at each pin instead of being wired across the page.

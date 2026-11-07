@@ -1,6 +1,6 @@
 # Third-party notices
 
-Metro Simulator is MIT licensed, as `LICENSE` says. It also includes the software below, each under its own licence.
+Circuit Bench is MIT licensed, as `LICENSE` says. It also includes the software below, each under its own licence.
 
 | Software | Where it is | Licence |
 |---|---|---|

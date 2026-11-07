@@ -1,4 +1,4 @@
-# Arduino Simulator for VS Code
+# Circuit Bench
 
 A VS Code extension that lets students build circuits and test CircuitPython for the Adafruit
 Metro M0 Express without a physical board. Arduino C++ support for the Metro 328 is planned.
