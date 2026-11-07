@@ -5,10 +5,12 @@
 // extension writes to disk. Dot files are refused, which keeps out .vscode tasks and settings.
 import { circuitProblem } from './catalog.js';
 
-export const PACKAGE_EXTENSION = 'metrosim';
+// Packages saved before the extension was renamed keep the old extension and format, and still open.
+export const PACKAGE_EXTENSIONS = ['circuitbench', 'metrosim'];
 export const MAX_PACKAGE_BYTES = 8 * 1024 * 1024;
 
-const FORMAT = 'metro-simulator-project';
+const FORMAT = 'circuit-bench-project';
+const OLD_FORMAT = 'metro-simulator-project';
 const VERSION = 1;
 const MAX_PROJECT_BYTES = 2 * 1024 * 1024;
 const DEFAULT_NAME = 'imported-project';
@@ -39,7 +41,7 @@ export function readPackage(text) {
   } catch {
     throw new Error('This is not a project package.');
   }
-  if (bundle?.format !== FORMAT) throw new Error('This is not a project package.');
+  if (bundle?.format !== FORMAT && bundle?.format !== OLD_FORMAT) throw new Error('This is not a project package.');
   if (bundle.version !== VERSION) throw new Error('This package needs a newer version of the simulator.');
   const problem = circuitProblem(bundle.circuit);
   if (problem) throw new Error(`The package's circuit cannot be used. ${problem}`);

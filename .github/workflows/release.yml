@@ -125,7 +125,7 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          test -f "dist/metro-simulator-$VERSION.vsix"
+          test -f "dist/circuit-bench-$VERSION.vsix"
           sed "s/{{VERSION}}/$VERSION/g" packaging/release-notes.md > notes.md
 
       - name: Create the release

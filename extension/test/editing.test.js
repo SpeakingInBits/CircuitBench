@@ -221,6 +221,10 @@ test('a package cannot replace the circuit through its files', () => {
   assert.throws(() => readPackage(packaged({ files: { 'Circuit.JSON': 'AA==' } })), /unsafe file/);
 });
 
+test('a package saved under the old name still opens', () => {
+  assert.equal(readPackage(packaged({ format: 'metro-simulator-project' })).name, 'blink');
+});
+
 test('a package with a bad name, circuit or size is handled', () => {
   assert.equal(readPackage(packaged({ name: '../../evil' })).name, 'imported-project');
   assert.throws(() => readPackage('not json'), /not a project package/);

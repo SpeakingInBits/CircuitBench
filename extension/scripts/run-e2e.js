@@ -27,7 +27,7 @@ const code = [
 ].find((candidate) => candidate && fs.existsSync(candidate));
 if (!code) fail('VS Code was not found. Set SIM_VSCODE to its executable.');
 
-const base = fs.mkdtempSync(path.join(os.tmpdir(), 'metro-e2e-'));
+const base = fs.mkdtempSync(path.join(os.tmpdir(), 'circuit-bench-e2e-'));
 const project = path.join(base, 'project');
 const report = path.join(base, 'report.json');
 fs.mkdirSync(project);

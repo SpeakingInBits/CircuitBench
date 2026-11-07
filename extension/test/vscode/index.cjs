@@ -58,7 +58,7 @@ async function waitForFileDiagram(diagramEditor, ready) {
 // The open circuit diagram, which fails the test if circuit.json opened some other way.
 async function diagramTab() {
   for (let i = 0; i < 50; i++) {
-    const tab = vscode.window.tabGroups.all.flatMap((group) => group.tabs).find((item) => item.input?.viewType === 'metroSim.diagram');
+    const tab = vscode.window.tabGroups.all.flatMap((group) => group.tabs).find((item) => item.input?.viewType === 'circuitBench.diagram');
     if (tab) return tab;
     await sleep(100);
   }
@@ -84,8 +84,8 @@ async function run() {
     fs.writeFileSync(file, CODE);
     const document = await vscode.workspace.openTextDocument(file);
     await vscode.window.showTextDocument(document, vscode.ViewColumn.One);
-    await vscode.commands.executeCommand('metroSim.open');
-    const extension = vscode.extensions.getExtension('speakinginbits.metro-simulator');
+    await vscode.commands.executeCommand('circuitBench.open');
+    const extension = vscode.extensions.getExtension('speakinginbits.circuit-bench');
     const { session } = extension.exports;
     const catalog = await import(path.join(extension.extensionPath, 'shared', 'catalog.js').replace(/\\/g, '/').replace(/^([A-Z]):/, 'file:///$1:'));
     // A step that fails inside the page never answers, so give up rather than hang.
@@ -204,7 +204,7 @@ async function run() {
     report.problems = final.problems;
 
     // Autocomplete setup writes stubs and settings into the project.
-    await vscode.commands.executeCommand('metroSim.setupEditor');
+    await vscode.commands.executeCommand('circuitBench.setupEditor');
     report.steps.stubsInstalled = fs.existsSync(path.join(folder, 'typings', 'digitalio-stubs'));
     if (!report.steps.stubsInstalled) throw new Error('Autocomplete stubs were not copied');
 
@@ -213,7 +213,7 @@ async function run() {
     fs.cpSync(path.join(extension.extensionPath, 'examples', 'led-and-button'), example, { recursive: true });
     const exampleDocument = await vscode.workspace.openTextDocument(path.join(example, 'code.py'));
     await vscode.window.showTextDocument(exampleDocument, vscode.ViewColumn.One);
-    await vscode.commands.executeCommand('metroSim.run');
+    await vscode.commands.executeCommand('circuitBench.run');
     await step({ action: 'waitRunning', running: true });
     await step({ action: 'waitConsole', text: 'code.py output:' });
     const exampleDoc = await step({ action: 'doc' });
@@ -225,7 +225,7 @@ async function run() {
 
     // The panel's Run button saves and runs what is typed, even though the panel has the focus.
     const program = await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(file), vscode.ViewColumn.One);
-    await vscode.commands.executeCommand('metroSim.open');
+    await vscode.commands.executeCommand('circuitBench.open');
     await program.edit((edit) => edit.insert(new vscode.Position(0, 0), 'print("UNSAVED EDIT")\n'));
     await vscode.commands.executeCommand('workbench.action.focusNextGroup');
     await sleep(500);
@@ -285,7 +285,7 @@ async function run() {
     fs.mkdirSync(path.join(folder, 'lib'), { recursive: true });
     fs.writeFileSync(path.join(folder, 'lib', 'helper.py'), 'VALUE = 1\n');
     await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(path.join(folder, 'lib', 'helper.py')), vscode.ViewColumn.One);
-    await vscode.commands.executeCommand('metroSim.open');
+    await vscode.commands.executeCommand('circuitBench.open');
     report.steps.folderFromLib = path.basename(session.folder);
     if (path.relative(session.folder, folder) !== '') throw new Error(`lib/ became the project: ${session.folder}`);
 
@@ -310,10 +310,10 @@ async function run() {
     const broken = await step({ action: 'read' });
     report.steps.brokenCircuitError = broken.loadError;
     if (!broken.loadError) throw new Error('A broken circuit.json was not reported');
-    await vscode.commands.executeCommand('metroSim.diagram');
+    await vscode.commands.executeCommand('circuitBench.diagram');
     report.steps.brokenDiagram = (await waitForDiagram(step, (shown) => shown.problem)).problem;
     await step({ action: 'click', selector: '#diagram' });
-    await vscode.commands.executeCommand('vscode.openWith', vscode.Uri.file(circuitFile), 'metroSim.diagram', vscode.ViewColumn.Beside);
+    await vscode.commands.executeCommand('vscode.openWith', vscode.Uri.file(circuitFile), 'circuitBench.diagram', vscode.ViewColumn.Beside);
     const brokenFile = await diagramTab();
     report.steps.brokenFileDiagram = (await waitForFileDiagram(diagramEditor, (shown) => shown.problem)).problem;
     await vscode.window.tabGroups.close(brokenFile);
@@ -331,10 +331,10 @@ async function run() {
     const settingsFile = path.join(folder, '.vscode', 'settings.json');
     const commented = '{\n  // Keep this comment\n  "editor.tabSize": 2,\n}\n';
     fs.writeFileSync(settingsFile, commented);
-    await vscode.commands.executeCommand('metroSim.setupEditor');
+    await vscode.commands.executeCommand('circuitBench.setupEditor');
     if (fs.readFileSync(settingsFile, 'utf8') !== commented) throw new Error('Setup rewrote a settings file with comments');
     fs.writeFileSync(settingsFile, '{ "editor.tabSize": 2, "python.analysis.extraPaths": ["other"] }');
-    await vscode.commands.executeCommand('metroSim.setupEditor');
+    await vscode.commands.executeCommand('circuitBench.setupEditor');
     const merged = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
     report.steps.mergedSettings = merged;
     if (merged['editor.tabSize'] !== 2 || merged['python.analysis.extraPaths'].join() !== 'other,lib') throw new Error('Setup lost existing settings');
@@ -405,7 +405,7 @@ async function run() {
     await session.exportTo('diagram-png', exportPath('diagram.png'));
     await session.exportTo('circuit-svg', exportPath('circuit.svg'));
     await session.exportTo('parts-csv', exportPath('parts.csv'));
-    await session.exportTo('package', exportPath('project.metrosim'));
+    await session.exportTo('package', exportPath('project.circuitbench'));
     await step({ action: 'click', selector: '#stop' });
     await step({ action: 'waitRunning', running: false });
     for (const name of ['circuit.png', 'diagram.png']) {
@@ -415,13 +415,13 @@ async function run() {
     if (!fs.readFileSync(exportPath('parts.csv'), 'utf8').includes('1,Multimeter')) throw new Error('The parts list lost the meter');
 
     const { unpackProject } = extension.exports;
-    const restored = await unpackProject(exportPath('project.metrosim'), exported);
+    const restored = await unpackProject(exportPath('project.circuitbench'), exported);
     report.steps.restored = path.basename(restored);
     if (fs.readFileSync(path.join(restored, 'code.py'), 'utf8') !== 'print("OTHER PROJECT")\n') throw new Error('The package changed the program');
     const original = fs.readFileSync(path.join(other, 'circuit.json'), 'utf8');
     if (fs.readFileSync(path.join(restored, 'circuit.json'), 'utf8') !== original) throw new Error('The package changed the circuit');
     let refused = false;
-    await unpackProject(exportPath('project.metrosim'), exported).catch(() => { refused = true; });
+    await unpackProject(exportPath('project.circuitbench'), exported).catch(() => { refused = true; });
     if (!refused) throw new Error('Importing replaced an existing folder');
     report.passed = true;
   } catch (error) {

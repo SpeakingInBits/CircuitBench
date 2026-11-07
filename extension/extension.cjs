@@ -6,14 +6,14 @@ const path = require('node:path');
 const vscode = require('vscode');
 
 const CIRCUIT_FILE = 'circuit.json';
-const DIAGRAM_VIEW = 'metroSim.diagram';
+const DIAGRAM_VIEW = 'circuitBench.diagram';
 const IGNORED = new Set(['.git', '.vscode', 'typings', 'node_modules', '__pycache__', CIRCUIT_FILE]);
 const MAX_PROJECT_BYTES = 2 * 1024 * 1024;
 const SAVE_DELAY_MS = 300;
 
 // Everything Export can save. `suffix` keeps a project's files apart in one folder.
 const EXPORTS = [
-  { format: 'package', label: 'Project package', detail: 'The program, circuit and libraries in one file. Open it with Import.', extension: 'metrosim', suffix: '' },
+  { format: 'package', label: 'Project package', detail: 'The program, circuit and libraries in one file. Open it with Import.', extension: 'circuitbench', suffix: '' },
   { format: 'circuit-png', label: 'Circuit picture (PNG)', detail: 'The build as it looks on the canvas.', extension: 'png', suffix: '-circuit' },
   { format: 'circuit-svg', label: 'Circuit picture (SVG)', detail: 'The same, and it stays sharp at any size.', extension: 'svg', suffix: '-circuit' },
   { format: 'diagram-png', label: 'Circuit diagram (PNG)', detail: 'The schematic, on a white page.', extension: 'png', suffix: '-diagram' },
@@ -211,7 +211,7 @@ class Session {
       this.panel.reveal(undefined, true);
       await this.ready;
     } else {
-      this.panel = vscode.window.createWebviewPanel('metroSim', 'Circuit Simulator', {
+      this.panel = vscode.window.createWebviewPanel('circuitBench', 'Circuit Simulator', {
         viewColumn: vscode.ViewColumn.Beside, preserveFocus: true,
       }, {
         enableScripts: true,
@@ -245,7 +245,7 @@ class Session {
       case 'input': this.board?.write(message.text); break;
       case 'control': this.board?.setControl(message.part, message.control, message.value); break;
       case 'export': this.exportProject(); break;
-      case 'import': vscode.commands.executeCommand('metroSim.importPackage'); break;
+      case 'import': vscode.commands.executeCommand('circuitBench.importPackage'); break;
       case 'reply':
         this.pendingReplies.get(message.id)?.(message.result);
         this.pendingReplies.delete(message.id);
@@ -470,9 +470,9 @@ async function unpackProject(file, parent) {
 }
 
 async function importPackage() {
-  const { PACKAGE_EXTENSION } = await import('./shared/project-package.js');
+  const { PACKAGE_EXTENSIONS } = await import('./shared/project-package.js');
   const files = await vscode.window.showOpenDialog({
-    canSelectMany: false, openLabel: 'Import', filters: { 'Project package': [PACKAGE_EXTENSION] },
+    canSelectMany: false, openLabel: 'Import', filters: { 'Project package': PACKAGE_EXTENSIONS },
   });
   if (!files) return;
   const parent = await vscode.window.showOpenDialog({
@@ -563,20 +563,20 @@ function activate(context) {
   const diagramEditor = new DiagramEditor(context);
   session.noteEditor(vscode.window.activeTextEditor);
   const command = (id, handler) => context.subscriptions.push(vscode.commands.registerCommand(id, handler));
-  command('metroSim.open', () => session.open(projectFolder()));
-  command('metroSim.diagram', () => session.showDiagram(projectFolder()));
-  command('metroSim.run', async () => {
+  command('circuitBench.open', () => session.open(projectFolder()));
+  command('circuitBench.diagram', () => session.showDiagram(projectFolder()));
+  command('circuitBench.run', async () => {
     if (await session.open(projectFolder())) await session.run();
   });
-  command('metroSim.stop', () => session.stop());
-  command('metroSim.newProject', () => newProject(context));
-  command('metroSim.addLibrary', () => addLibrary(context));
-  command('metroSim.setupEditor', () => setupEditor(context));
-  command('metroSim.copyToBoard', copyToBoard);
-  command('metroSim.export', async () => {
+  command('circuitBench.stop', () => session.stop());
+  command('circuitBench.newProject', () => newProject(context));
+  command('circuitBench.addLibrary', () => addLibrary(context));
+  command('circuitBench.setupEditor', () => setupEditor(context));
+  command('circuitBench.copyToBoard', copyToBoard);
+  command('circuitBench.export', async () => {
     if (await session.open(projectFolder())) await session.exportProject();
   });
-  command('metroSim.importPackage', importPackage);
+  command('circuitBench.importPackage', importPackage);
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(DIAGRAM_VIEW, diagramEditor),
     vscode.window.onDidChangeActiveTextEditor((editor) => session.noteEditor(editor)),
