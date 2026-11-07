@@ -421,6 +421,8 @@ export class Circuit {
       const event = this.events.shift();
       this.eventTime = event.time;
       event.callback(event.time);
+      // A timed pulse can start and end between frames.
+      this.checkPinVolts();
     }
     this.eventTime = undefined;
     if (now - this.lastFrame >= FRAME_MS) this.frame(now);
@@ -669,12 +671,18 @@ export class Circuit {
     return toggling;
   }
 
-  checkPins() {
+  checkPinVolts() {
     for (const pin of this.pins.values()) {
       const voltage = this.volts(pin.node);
       if (voltage > PIN_MAX_VOLTS) {
         this.problem('error', this.boardId, `${pin.name} sees ${voltage.toFixed(1)}V. Metro pins only tolerate 3.3V.`, pin.name);
       }
+    }
+  }
+
+  checkPins() {
+    this.checkPinVolts();
+    for (const pin of this.pins.values()) {
       if (!pin.driver.off) {
         const amps = Math.abs(pin.driver.group.solver.currentThrough(pin.driver));
         if (amps > PIN_MAX_AMPS) {

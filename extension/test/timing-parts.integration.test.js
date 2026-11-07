@@ -38,8 +38,8 @@ function circuit(parts, wires) {
   return doc;
 }
 
-async function run({ code, parts = [], wires = [], libraries = [], until = 'Code done running', timeoutMs = 20000, during }) {
-  const board = new Board({ files: { '/code.py': code, ...libFiles(libraries) }, circuit: circuit(parts, wires) });
+async function run({ code, parts = [], wires = [], libraries = [], controls, until = 'Code done running', timeoutMs = 20000, during }) {
+  const board = new Board({ files: { '/code.py': code, ...libFiles(libraries) }, circuit: circuit(parts, wires), controls });
   const views = {};
   const problems = [];
   let crash;
@@ -75,9 +75,10 @@ for i in range(5):
   const { output, problems } = await run({
     code, libraries: ['adafruit_hcsr04'], parts: [['u', 'hcsr04']],
     wires: [...power('u', '5V'), ['board:D5', 'u:TRIG'], ['board:D6', 'u:ECHO']],
-    during: async (board) => board.setControl('u', 'distance', 100),
+    controls: { 'u:distance': 100 },
   });
   assert.match(output, /distance (9[5-9]|10[0-5])/, output);
+  assert.doesNotMatch(output, /retry/, 'the first reading works');
   assert.ok(problems.some((message) => message.includes('only tolerate 3.3V')), 'a 5V echo pin is flagged');
 });
 

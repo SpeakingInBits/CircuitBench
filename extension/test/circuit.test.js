@@ -241,6 +241,18 @@ test('HC-SR04 echoes for a time matching the distance', () => {
   assert.equal(sim.input('D3', 0), 0, 'echo ended near 5.83ms');
 });
 
+test('a 5V echo shorter than a frame is still reported', () => {
+  const sim = build([{ id: 'u', type: 'hcsr04' }],
+    [['board:5V', 'u:VCC'], ['u:GND', 'board:GND1'], ['board:D2', 'u:TRIG'], ['board:D3', 'u:ECHO']]);
+  sim.output('D2', 0);
+  sim.input('D3', 0);
+  sim.output('D2', 1);
+  sim.output('D2', 0);
+  sim.advance(10);
+  assert.equal(sim.input('D3', 0), 0, 'the echo is over before any frame');
+  assert.ok(sim.problems().some((message) => message.includes('only tolerate 3.3V')));
+});
+
 test('I2C device must be wired to answer, and pull-ups come from the breakout', () => {
   const wired = build([{ id: 't', type: 'mcp9808' }],
     [['board:3V', 't:VCC'], ['t:GND', 'board:GND1'], ['board:SDA', 't:SDA'], ['board:SCL', 't:SCL']]);

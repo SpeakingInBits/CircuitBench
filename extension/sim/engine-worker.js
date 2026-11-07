@@ -55,17 +55,21 @@ function serialWrite(data) {
   if (msUntilSerialFlush() <= 0) flushSerial();
 }
 
+// Passes on any controls the student moved.
+function applyControls() {
+  if (Atomics.exchange(ctrl, CTRL.CONTROLS_CHANGED, 0) !== 1) return;
+  for (let i = 0; i < slots.length; i++) {
+    const value = controls[i];
+    if (value === lastControls[i]) continue;
+    lastControls[i] = value;
+    circuit.setControl(slots[i].part, slots[i].control, value);
+  }
+}
+
 // Checks for controls the student moved, and runs anything due.
 function service() {
   if (serialLength > 0 && msUntilSerialFlush() <= 0) flushSerial();
-  if (Atomics.exchange(ctrl, CTRL.CONTROLS_CHANGED, 0) === 1) {
-    for (let i = 0; i < slots.length; i++) {
-      const value = controls[i];
-      if (value === lastControls[i]) continue;
-      lastControls[i] = value;
-      circuit.setControl(slots[i].part, slots[i].control, value);
-    }
-  }
+  applyControls();
   circuit.tick();
 }
 
@@ -279,14 +283,14 @@ const sim = {
     const state = pulseIns.get(id);
     if (state) state.queue = [];
   },
+  // The firmware asks this just before it resumes, too. An echo that a trigger pulse has only just
+  // started must wait until then, because the edges seen while paused are dropped.
   pulseinCount(id) {
-    service();
-    return pulseIns.get(id)?.queue.length ?? 0;
+    const state = pulseIns.get(id);
+    if (!state?.paused) service();
+    return state?.queue.length ?? 0;
   },
-  pulseinPop(id) {
-    service();
-    return pulseIns.get(id)?.queue.shift() ?? -1;
-  },
+  pulseinPop: (id) => pulseIns.get(id)?.queue.shift() ?? -1,
   pulseinClose(id) {
     const state = pulseIns.get(id);
     if (state) state.closed = true;
@@ -320,6 +324,9 @@ const sim = {
   midiAvailable: () => usbIn.midi.length,
   midiRead: () => usbIn.midi.shift() ?? -1,
 };
+
+// The firmware can get well into code.py before it first calls service().
+applyControls();
 
 const require = createRequire(import.meta.url);
 const createCircuitPython = require(firmware);

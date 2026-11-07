@@ -17,7 +17,7 @@ const MAX_OUTPUT_CHARS = 1024 * 1024;
 export class Board extends EventEmitter {
   constructor({
     files, circuit = emptyCircuit(), firmware = path.join(HERE, '..', 'firmware', 'firmware.cjs'),
-    portHeapBytes = METRO_M0_PORT_HEAP_BYTES, nvm,
+    portHeapBytes = METRO_M0_PORT_HEAP_BYTES, nvm, controls = {},
   }) {
     super();
     this.output = '';
@@ -29,7 +29,9 @@ export class Board extends EventEmitter {
     this.ctrl = ctrlView(this.shared);
     this.rx = rxView(this.shared);
     this.controls = controlsView(this.shared);
-    this.slots.forEach((slot, i) => { this.controls[i] = slot.value; });
+    // Keyed as "part:control". These are in place before the program starts, which setControl()
+    // can't promise because the worker is already running by the time it can be called.
+    this.slots.forEach((slot, i) => { this.controls[i] = controls[`${slot.part}:${slot.control}`] ?? slot.value; });
     const encoded = Object.entries(files).map(([filePath, content]) => ({
       path: filePath,
       data: typeof content === 'string' ? new TextEncoder().encode(content) : content,
