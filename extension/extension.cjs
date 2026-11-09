@@ -67,6 +67,11 @@ function isInside(folder, file) {
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
+// A file the board reads, the same way readProjectFiles chooses them.
+function isBoardFile(folder, file) {
+  return isInside(folder, file) && path.relative(folder, file).split(path.sep).every((name) => !IGNORED.has(name) && !name.startsWith('.'));
+}
+
 // The project is the nearest folder holding a circuit or a program, so a file in lib/ or .vscode/
 // still belongs to the project around it.
 function projectFolder() {
@@ -188,10 +193,24 @@ class Session {
     return sameFolder(this.folder, path.dirname(document.uri.fsPath)) ? document : undefined;
   }
 
+  // Like a real board, saving a file the program reads restarts a running program with it.
   async onDocumentSaved(document) {
-    if (!this.panel || !this.folder || !sameFolder(document.uri.fsPath, this.circuitPath())) return;
-    await this.stop();
-    await this.loadCircuit();
+    if (!this.panel || !this.folder || document.uri.scheme !== 'file') return;
+    const file = document.uri.fsPath;
+    if (sameFolder(file, this.circuitPath())) {
+      await this.stop();
+      await this.loadCircuit();
+    } else if (this.board && isBoardFile(this.folder, file)) {
+      await this.reload(this.board);
+    }
+  }
+
+  // Run saves files itself, and by the time those saves come back here it has started another
+  // board, so they do not start it again.
+  reload(board) {
+    return this.enqueue(async () => {
+      if (this.board === board) await this.startBoard('\nCode saved, reloading.\nsoft reboot\n\n');
+    });
   }
 
   async open(folder) {
@@ -282,7 +301,8 @@ class Session {
     await board?.stop();
   }
 
-  async startBoard() {
+  // A reload keeps what the console showed, as a real board does, and adds `notice` to it.
+  async startBoard(notice) {
     if (!this.panel) return;
     if (this.circuitError) {
       this.showCircuitError();
@@ -304,7 +324,7 @@ class Session {
     const { Board } = await import('./sim/board-host.js');
     const { emptyCircuit } = await import('./shared/catalog.js');
     await this.releaseBoard();
-    this.post({ type: 'clearConsole' });
+    this.post(notice ? { type: 'serial', text: notice } : { type: 'clearConsole' });
     const board = new Board({
       files,
       circuit: this.circuit ?? emptyCircuit(),
