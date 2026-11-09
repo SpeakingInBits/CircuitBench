@@ -48,6 +48,14 @@ Run saves your open project files first, so it always runs what you see. Like a 
 the new code, and the console shows `Code saved, reloading.` Saving while it is stopped does not
 start it.
 
+If your program stops with an error, the line it stopped on gets a red squiggle, and the error is
+listed in VS Code's **Problems** tab. When the error is inside a `.py` file in your project's `lib`
+folder, that line is marked too, along with the line in your program that called it. In the console,
+click `File "code.py", line 4` to open that line. The marks go away when you edit the file, or when
+the program runs or reloads. If the error is `ImportError: no module named 'adafruit_hcsr04'` and
+Circuit Bench has that library, the console offers to add it, and so does the light bulb on the
+squiggle.
+
 **Problems** warns about mistakes that would matter on a real board. A part being damaged smokes on
 the canvas, and a part that is only wired wrong gets a warning sign. Hover over the part to read why,
 or click the problem to select the part. Parts with no connection to the board or a battery turn grey,

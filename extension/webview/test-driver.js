@@ -113,6 +113,8 @@ export async function runTestStep(step, { state, toScreen, fit }) {
     case 'read':
       return {
         console: element('console').textContent.slice(-600),
+        consoleLinks: [...document.querySelectorAll('#console .trace-link')].map((link) => link.textContent),
+        libraryHint: element('library-hint').hidden ? null : element('add-library').textContent,
         views: state.views,
         board: state.board,
         problems: state.problems,

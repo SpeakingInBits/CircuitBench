@@ -1,6 +1,7 @@
 // The circuit builder: place parts, draw wires, and show the running simulation.
 import { BOARD_TYPE, CATALOG, CATEGORIES, defaultProps, definition, emptyCircuit, partBounds, pinPosition } from '../shared/catalog.js';
 import { buildNets, pinKey, unsimulated } from '../shared/nets.js';
+import { frameLinks } from '../shared/traceback.js';
 import { escapeXml, holePattern, partArt, partLabel, partTransform, smoke, warningMark } from './art.js';
 import { createDiagram } from './diagram.js';
 import { alignParts, copyParts, flipParts, internalWires, moveParts, parseValue, pasteClip, rotateParts, wirePath, wirePoints } from './editing.js';
@@ -49,6 +50,7 @@ const state = {
   loadError: undefined, // Why circuit.json could not be used. Nothing can be edited until it is fixed.
   scene3d: null, // The 3D view, while it is open.
   diagram: null, // The circuit diagram, while it is open.
+  libraryHint: undefined, // A library the program could not import, which can be added.
 };
 
 const partById = (id) => state.doc.parts.find((part) => part.id === id);
@@ -1013,12 +1015,50 @@ $('controls').addEventListener('click', (event) => {
 
 const consoleElement = $('console');
 const serialFilter = new SerialFilter();
+let consoleText = '';
+
+// Shows the console text, with each `File "code.py", line 4` of a traceback as a link to that line.
+function renderConsole() {
+  const links = frameLinks(consoleText);
+  if (links.length === 0) {
+    consoleElement.textContent = consoleText;
+    return;
+  }
+  const pieces = [];
+  let at = 0;
+  for (const { start, end, file, line } of links) {
+    const link = document.createElement('span');
+    link.className = 'trace-link';
+    link.textContent = consoleText.slice(start, end);
+    link.title = `Open ${file.replace(/^\/+/, '')} at line ${line}`;
+    Object.assign(link.dataset, { file, line });
+    pieces.push(consoleText.slice(at, start), link);
+    at = end;
+  }
+  pieces.push(consoleText.slice(at));
+  consoleElement.replaceChildren(...pieces);
+}
 
 function appendSerial(chunk) {
   const { text, title } = serialFilter.push(chunk);
   if (title !== undefined) $('board-title').textContent = title;
-  consoleElement.textContent = typeInto(consoleElement.textContent, text).slice(-60000);
+  if (!text) return;
+  consoleText = typeInto(consoleText, text).slice(-60000);
+  renderConsole();
   consoleElement.scrollTop = consoleElement.scrollHeight;
+}
+
+consoleElement.addEventListener('click', (event) => {
+  const link = event.target.closest('.trace-link');
+  if (link) vscode.postMessage({ type: 'openFrame', file: link.dataset.file, line: Number(link.dataset.line) });
+});
+
+// Offers to add the library a program could not import. Empty hides it.
+function showLibraryHint(name) {
+  state.libraryHint = name;
+  $('library-hint-text').textContent = name ? `${name} is not in this project's lib folder.` : '';
+  $('add-library').textContent = name ? `Add ${name}` : '';
+  $('library-hint').hidden = !name || consoleElement.hidden;
 }
 
 consoleElement.addEventListener('keydown', (event) => {
@@ -1034,6 +1074,7 @@ consoleElement.addEventListener('keydown', (event) => {
 function showTab(name) {
   const onConsole = name === 'console';
   consoleElement.hidden = !onConsole;
+  $('library-hint').hidden = !onConsole || !state.libraryHint;
   $('problems').hidden = onConsole;
   $('tab-console').classList.toggle('active', onConsole);
   $('tab-problems').classList.toggle('active', !onConsole);
@@ -1183,9 +1224,12 @@ const handlers = {
   showDiagram: openDiagram,
   serial: (message) => appendSerial(message.text),
   clearConsole() {
+    consoleText = '';
     consoleElement.textContent = '';
     serialFilter.reset();
+    showLibraryHint(undefined);
   },
+  libraryHint: (message) => showLibraryHint(message.name),
   frame: applyFrame,
   running: (message) => setRunning(message.running),
   audioStart(message) {
@@ -1245,6 +1289,7 @@ $('parts').addEventListener('click', (event) => {
   const type = event.target.dataset?.add;
   if (type) addPart(type);
 });
+$('add-library').addEventListener('click', () => vscode.postMessage({ type: 'addLibrary', name: state.libraryHint }));
 $('tab-console').addEventListener('click', () => showTab('console'));
 $('tab-problems').addEventListener('click', () => showTab('problems'));
 new ResizeObserver(() => applyTransform()).observe(canvas);
