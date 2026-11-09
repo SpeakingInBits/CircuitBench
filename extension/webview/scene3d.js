@@ -1,52 +1,24 @@
 // The 3D view of a circuit. Parts can be picked and dragged here, but main.js does the moving,
-// sharing the 2D canvas's drag, so snapping, undo and saving work the same in both. main.js imports this file the first time a student opens the view, so three.js costs nothing
-// until then. It draws only when something changes, and dispose() gives the memory back.
+// sharing the 2D canvas's drag, so snapping, undo and saving work the same in both. main.js imports
+// this file the first time a student opens the view, so three.js costs nothing until then. It
+// draws only when something changes, and dispose() gives the memory back.
 //
-// Every part gets a body and legs from its catalog entry and 2D art, with the art on top, so a
-// new part appears here with no extra work. BUILDERS holds the few parts worth modelling by hand.
+// The parts' shapes are in models3d.js. A part with no model there still appears, as a plain body
+// on legs with its 2D art on top, so a new part shows up here before anyone has modelled it.
 import * as THREE from './vendor/three/three.module.js';
-import { BOARD_TYPE, definition, pinPosition } from '../shared/catalog.js';
-import { BAND, LED_HEX, holePattern, partArt, resistorBands } from './art.js';
-import { BOARD_TOP, BREADBOARD_TOP, HEADER_TOP, isSurface, partBase, partBody, sceneBounds, surfaces, wireRoute } from './layout3d.js';
+import { definition } from '../shared/catalog.js';
+import { holePattern, partArt } from './art.js';
+import { isSurface, partBase, partBody, sceneBounds, surfaces, wireRoute } from './layout3d.js';
+import { BUILDERS, addLegs, at, block, post } from './models3d.js';
 
 const TABLE_COLOR = '#56636d'; // Matches the 2D canvas.
-const METAL = '#c4c7cc';
 const SELECTED = '#3399ff'; // The 2D canvas's selection outline.
 const CLICK_SLOP = 4; // Pixels the pointer can move before a click becomes a drag.
 const FIELD_OF_VIEW = 32;
 const LOWEST_VIEW = 1.45; // Radians from straight down, which keeps the camera above the table.
-const BAR = new THREE.CylinderGeometry(1, 1, 1, 12);
 const UP = new THREE.Vector3(0, 1, 0);
-
-// Body height and how far it stands off its surface on its legs, by part type.
-const BODY = {
-  'keypad-4x4': [3, 2], 'touch-pad': [2, 2], 'lcd1602': [10, 8], 'lcd-i2c': [10, 8], 'shift-register': [6, 3], l293d: [6, 3],
-  piezo: [10, 2], battery: [34, 0], dht: [12, 4], hcsr04: [8, 8], 'dc-motor': [20, 4], 'stepper-uln2003': [16, 4],
-};
-const DEFAULT_BODY = [5, 7];
-
-const at = (x, h, y) => new THREE.Vector3(x, h, y);
-
-function bar(from, to, radius, material) {
-  const mesh = new THREE.Mesh(BAR, material);
-  const direction = to.clone().sub(from);
-  mesh.scale.set(radius, direction.length(), radius);
-  mesh.position.copy(from).addScaledVector(direction, 0.5);
-  mesh.quaternion.setFromUnitVectors(UP, direction.normalize());
-  return mesh;
-}
-
-function block(box, bottom, height, material) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(box.w, height, box.h), material);
-  mesh.position.set(box.x + box.w / 2, bottom + height / 2, box.y + box.h / 2);
-  return mesh;
-}
-
-function post(x, y, radius, bottom, height, material) {
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 28), material);
-  mesh.position.set(x, bottom + height / 2, y);
-  return mesh;
-}
+// For a part with no model: how tall its body is, and how far it stands off its surface.
+const PLAIN_BODY = [5, 7];
 
 // A part's 2D art, drawn onto a texture. Drawing is asynchronous, so while one drawing is in
 // progress newer art waits, and only the latest is ever drawn.
@@ -98,234 +70,28 @@ class ArtFace {
   }
 }
 
-// Adds the art to the top of a body. Displays light up, so they also glow with their own art.
-function addFace(kit, body, crop, height, lit) {
-  const face = new ArtFace(crop, body.color, kit.textureLimit, kit.events);
-  const geometry = body.shape === 'round' ? new THREE.CircleGeometry(body.w / 2, 40) : new THREE.PlaneGeometry(body.w, body.h);
-  geometry.rotateX(-Math.PI / 2);
-  const material = new THREE.MeshStandardMaterial({ map: face.texture, roughness: 0.75 });
-  if (lit) {
-    material.emissive = new THREE.Color('#fff');
-    material.emissiveMap = face.texture;
-    material.emissiveIntensity = 0.6;
-  }
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(body.x + body.w / 2, height + 0.05, body.y + body.h / 2);
-  kit.root.add(mesh);
-  return face;
-}
-
-function addLegs(kit, pins, body, height, material = kit.solid(METAL)) {
-  for (const pin of pins) {
-    kit.root.add(bar(at(pin.x, -1, pin.y), at(pin.x, height, pin.y), 0.8, material));
-    const x = Math.max(body.x, Math.min(body.x + body.w, pin.x));
-    const y = Math.max(body.y, Math.min(body.y + body.h, pin.y));
-    if (x !== pin.x || y !== pin.y) kit.root.add(bar(at(pin.x, height, pin.y), at(x, height, y), 0.8, material));
-  }
-}
-
-function addGlow(kit, x, h, y) {
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: kit.glowTexture, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
-  }));
-  sprite.position.set(x, h, y);
-  kit.root.add(sprite);
-  return (color, level, size) => {
-    sprite.material.color.set(color);
-    sprite.material.opacity = 0.85 * level;
-    sprite.scale.setScalar(size);
-  };
-}
-
-function addLens(kit, x, y, radius, color) {
-  const material = new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.82, roughness: 0.25, emissive: color, emissiveIntensity: 0 });
-  const bottom = 6;
-  const barrel = radius * 1.1;
-  kit.root.add(post(x, y, radius * 1.16, bottom, 1.2, material));
-  kit.root.add(post(x, y, radius, bottom + 1.2, barrel, material));
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(radius, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2), material);
-  dome.position.set(x, bottom + 1.2 + barrel, y);
-  kit.root.add(dome);
-  return { material, glow: addGlow(kit, x, bottom + barrel, y) };
-}
-
-function addAxial(kit, length, radius, height, material) {
-  const [first, second] = definition(kit.part.type).pins;
-  const start = (length - (first.x + second.x)) / -2;
-  const lead = kit.solid(METAL);
-  for (const pin of [first, second]) kit.root.add(bar(at(pin.x, -1, pin.y), at(pin.x, height, pin.y), 0.8, lead));
-  kit.root.add(bar(at(first.x, height, 0), at(second.x, height, 0), 0.8, lead));
-  kit.root.add(bar(at(start, height, 0), at(start + length, height, 0), radius, material));
-  return (from, width, color) => kit.root.add(bar(at(from, height, 0), at(from + width, height, 0), radius + 0.12, kit.solid(color)));
-}
-
-const pinsOf = (kit) => definition(kit.part.type).pins;
-const pinMiddle = (pins) => ({
-  x: pins.reduce((sum, pin) => sum + pin.x, 0) / pins.length,
-  y: pins.reduce((sum, pin) => sum + pin.y, 0) / pins.length,
-});
-
-function standingLegs(kit, height) {
-  for (const pin of pinsOf(kit)) kit.root.add(bar(at(pin.x, -1, pin.y), at(pin.x, height, pin.y), 0.8, kit.solid(METAL)));
-}
-
-// The flat-sided package of small transistors and sensors.
-function halfRound(kit) {
-  const { x, y } = pinMiddle(pinsOf(kit));
-  const shape = new THREE.Shape();
-  shape.absarc(0, 0, 10.5, 0, Math.PI);
-  shape.closePath();
-  const geometry = new THREE.ExtrudeGeometry(shape, { depth: 13, bevelEnabled: false, curveSegments: 20 });
-  geometry.rotateX(-Math.PI / 2);
-  const mesh = new THREE.Mesh(geometry, kit.solid('#222', { roughness: 0.5 }));
-  mesh.position.set(x, 5, y + 4);
-  kit.root.add(mesh);
-  standingLegs(kit, 6);
-}
-
-function board(kit) {
+// What stands in for a part with no model: a body the shape of the largest thing in its 2D art,
+// on its legs, with the art on top.
+function plainPart(kit) {
   const { part, root } = kit;
-  const entry = definition(part.type);
-  const pcb = { shape: 'box', x: 0, y: 0, w: 284, h: entry.h, color: '#23262b' };
-  const art = partArt(part);
-  const black = kit.solid('#141414');
-  root.add(block(pcb, BOARD_TOP - 3, 3, kit.solid(pcb.color)));
-  for (const [x, y] of [[12, 12], [272, 12], [12, 198], [272, 198]]) root.add(post(x, y, 3, 0, BOARD_TOP - 3, kit.solid('#8d8f93')));
-  addFace(kit, pcb, pcb, BOARD_TOP, false).show(art);
-
-  const raised = (box, height, material, color = '#111') => {
-    root.add(block(box, BOARD_TOP, height, material));
-    addFace(kit, { ...box, shape: 'box', color }, box, BOARD_TOP + height, false).show(art);
-  };
-  for (const box of [
-    { x: 76, y: 6, w: 98, h: 8 }, { x: 186, y: 6, w: 78, h: 8 }, { x: 96, y: 196, w: 68, h: 8 }, { x: 186, y: 196, w: 58, h: 8 },
-    { x: 256, y: 86, w: 18, h: 18 },
-  ]) raised(box, HEADER_TOP - BOARD_TOP, black);
-  raised({ x: 112, y: 76, w: 48, h: 48 }, 3, black);
-  root.add(block({ x: -8, y: 30, w: 34, h: 34 }, BOARD_TOP, 13, kit.solid('#b8bcc2', { metalness: 0.5, roughness: 0.4 })));
-  root.add(block({ x: -8, y: 130, w: 40, h: 40 }, BOARD_TOP, 15, black));
-  root.add(post(47, 177, 4, BOARD_TOP + 2, 2.5, kit.solid('#c33')));
-  root.add(block({ x: 40, y: 170, w: 14, h: 14 }, BOARD_TOP, 2, kit.solid('#555')));
-
-  const led = new THREE.MeshStandardMaterial({ color: '#552222', emissive: '#ff3b30', emissiveIntensity: 0 });
-  const pixel = new THREE.MeshStandardMaterial({ color: '#eee', emissive: '#000' });
-  root.add(block({ x: 66, y: 34, w: 8, h: 6 }, BOARD_TOP, 1.6, led));
-  root.add(block({ x: 84, y: 30, w: 12, h: 12 }, BOARD_TOP, 2.2, pixel));
-  const ledGlow = addGlow(kit, 70, BOARD_TOP + 4, 37);
-  const pixelGlow = addGlow(kit, 90, BOARD_TOP + 5, 36);
-
-  return (view) => {
-    const level = view?.board?.led ?? 0;
-    led.emissiveIntensity = level * 3;
-    ledGlow('#ff3b30', level, 26);
-    const rgb = view?.board?.neopixel;
-    const color = rgb ? `rgb(${rgb.map((v) => Math.min(255, v * 3)).join(',')})` : '#000';
-    pixel.emissive.set(color);
-    pixelGlow(color, rgb ? 1 : 0, 34);
-  };
-}
-
-const BUILDERS = {
-  [BOARD_TYPE]: board,
-
-  led(kit) {
-    const { part } = kit;
-    const color = LED_HEX[part.props?.color] ?? LED_HEX.red;
-    const { x, y } = pinMiddle(pinsOf(kit));
-    standingLegs(kit, 6);
-    const { material, glow } = addLens(kit, x, y, 5, color);
-    return (view) => {
-      const level = view?.burned ? 0 : view?.brightness ?? 0;
-      material.color.set(view?.burned ? '#333' : color);
-      material.emissiveIntensity = level * 2.5;
-      glow(color, level, 34);
-    };
-  },
-
-  'rgb-led'(kit) {
-    const { x, y } = pinMiddle(pinsOf(kit));
-    standingLegs(kit, 6);
-    const { material, glow } = addLens(kit, x, y, 8, '#dfe4ea');
-    return (view) => {
-      const [r, g, b] = view?.rgb ?? [0, 0, 0];
-      const level = Math.max(r, g, b);
-      const color = new THREE.Color(r, g, b);
-      material.color.set(level > 0 ? color : '#dfe4ea');
-      material.emissive.copy(color);
-      material.emissiveIntensity = 2.5;
-      glow(color, level, 46);
-    };
-  },
-
-  resistor(kit) {
-    const band = addAxial(kit, 24, 3.4, 6, kit.solid('#d9b98a'));
-    resistorBands(kit.part.props?.ohms ?? 220).forEach((value, i) => band(12 + i * 5, 2.5, BAND[value]));
-    band(28, 2, '#c5a032');
-  },
-
-  diode(kit) {
-    addAxial(kit, 20, 2.8, 5, kit.solid('#222'))(25, 3, '#ddd');
-  },
-
-  capacitor(kit) {
-    const { x, y } = pinMiddle(pinsOf(kit));
-    standingLegs(kit, 4);
-    kit.root.add(post(x, y, 7, 3, 20, kit.solid('#1f3d7a', { roughness: 0.4 })));
-    kit.root.add(post(x, y, 6.6, 23, 0.4, kit.solid(METAL, { metalness: 0.5 })));
-  },
-
-  npn: halfRound,
-  tmp36: halfRound,
-  ds18b20: halfRound,
-
-  button(kit) {
-    const body = { x: 0, y: 3, w: 20, h: 24 };
-    const red = kit.solid('#e0403a');
-    addLegs(kit, pinsOf(kit), body, 4);
-    kit.root.add(block(body, 3, 5, kit.solid('#333')));
-    const cap = post(10, 15, 7.5, 8, 5, red);
-    kit.root.add(cap);
-    return (view) => {
-      cap.position.y = view?.pressed ? 9 : 10.5;
-      red.color.set(view?.pressed ? '#b02a23' : '#e0403a');
-    };
-  },
-
-  servo(kit) {
-    const body = { x: 0, y: 0, w: 40, h: 40 };
-    const blue = kit.solid('#2a5fa8');
-    const white = kit.solid('#f0f0f0');
-    for (const [pin, color] of pinsOf(kit).map((p, i) => [p, ['#6b4a2b', '#d33', '#e8a33d'][i]])) {
-      addLegs(kit, [pin], body, 6, kit.solid(color));
-    }
-    kit.root.add(block(body, 3, 24, blue));
-    kit.root.add(block({ x: -6, y: 15, w: 52, h: 5 }, 18, 2, blue));
-    const horn = new THREE.Group();
-    horn.position.set(20, 27, 14);
-    horn.add(post(0, 0, 6, 0, 3, white));
-    horn.add(block({ x: -1.6, y: -20, w: 3.2, h: 20 }, 1, 2, white));
-    kit.root.add(horn);
-    return (view) => {
-      horn.rotation.y = -THREE.MathUtils.degToRad((view?.angle ?? 90) - 90);
-    };
-  },
-};
-
-// The body every other part gets, which keeps following the part's 2D art.
-function standardPart(kit) {
-  const { part, root } = kit;
-  const entry = definition(part.type);
   const body = partBody(part);
-  const [height, lift] = entry.background ? [BREADBOARD_TOP, 0] : BODY[part.type] ?? DEFAULT_BODY;
+  const [height, lift] = PLAIN_BODY;
   const material = kit.solid(body.color);
   root.add(body.shape === 'round'
     ? post(body.x + body.w / 2, body.y + body.h / 2, body.w / 2, lift, height, material)
     : block(body, lift, height, material));
-  if (!entry.background) addLegs(kit, entry.pins, body, lift + 1);
-  const lit = entry.category === 'Displays' || part.type === 'neopixel';
-  const face = addFace(kit, body, body.crop, lift + height, lit);
+  addLegs(kit, definition(part.type).pins, body, lift + 1);
+  const face = new ArtFace(body.crop, body.color, kit.textureLimit, kit.events);
+  const geometry = body.shape === 'round' ? new THREE.CircleGeometry(body.w / 2, 40) : new THREE.PlaneGeometry(body.w, body.h);
+  geometry.rotateX(-Math.PI / 2);
+  const top = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ map: face.texture, roughness: 0.75 }));
+  top.position.set(body.x + body.w / 2, lift + height + 0.05, body.y + body.h / 2);
+  top.userData.print = true;
+  root.add(top);
   return (view) => face.show(partArt(part, view));
 }
+
+const makeCanvas = (width, height) => Object.assign(document.createElement('canvas'), { width, height });
 
 function makeGlowTexture() {
   const canvas = document.createElement('canvas');
@@ -349,6 +115,7 @@ function hasGraphicsHardware() {
 
 function disposeTree(object) {
   object.traverse((child) => {
+    if (child.isInstancedMesh) child.dispose();
     child.geometry?.dispose();
     for (const material of [child.material].flat()) {
       material?.map?.dispose();
@@ -404,7 +171,8 @@ export function createScene3d(container, {
   scene.add(table);
 
   const glowTexture = makeGlowTexture();
-  const stats = { frames: 0, artDrawn: 0, artFailed: 0 };
+  // `artDrawn` counts everything printed or drawn on a part, and `updates` each change a part showed.
+  const stats = { frames: 0, artDrawn: 0, artFailed: 0, updates: 0 };
   let circuit = new THREE.Group();
   let wires = new THREE.Group();
   let parts = new Map(); // id -> { root, update, view }
@@ -462,7 +230,7 @@ export function createScene3d(container, {
         if (!materials.has(key)) materials.set(key, new THREE.MeshStandardMaterial({ color, roughness: 0.6, ...options }));
         return materials.get(key);
       };
-      const update = (BUILDERS[part.type] ?? standardPart)({ part, root, solid, events, glowTexture, textureLimit });
+      const update = (BUILDERS[part.type] ?? plainPart)({ part, root, solid, events, glowTexture, textureLimit, canvas: makeCanvas });
       root.userData.part = part.id;
       root.userData.surface = isSurface(definition(part.type));
       root.rotation.y = -THREE.MathUtils.degToRad(part.rotation ?? 0);
@@ -472,7 +240,10 @@ export function createScene3d(container, {
     }
 
     circuit.traverse((child) => {
-      if (child.isMesh) child.castShadow = child.receiveShadow = true;
+      if (!child.isMesh) return;
+      // Print lies flat on what it is printed on, so it has no shadow of its own.
+      child.castShadow = !child.userData.print;
+      child.receiveShadow = true;
     });
     scene.add(circuit);
     place(doc);
@@ -705,6 +476,7 @@ export function createScene3d(container, {
     if (!entry || entry.view === text) return;
     entry.view = text;
     entry.update?.(view);
+    stats.updates++;
     invalidate();
   }
 
