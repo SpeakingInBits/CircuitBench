@@ -118,6 +118,7 @@ export async function runTestStep(step, { state, toScreen, fit }) {
         views: state.views,
         board: state.board,
         problems: state.problems,
+        codeProblems: state.codeProblems,
         selection: state.selection,
         smoke: document.querySelectorAll('#layer-status .smoke').length,
         idle: [...document.querySelectorAll('.part.idle')].map((element) => element.dataset.part),

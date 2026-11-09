@@ -224,6 +224,27 @@ async function run() {
     report.sharedArrayBufferInWebview = final.sharedArrayBuffer;
     report.problems = final.problems;
 
+    // Problems compares the program with the circuit, and a pin warning opens the program at its line.
+    if (final.codeProblems.length > 0) throw new Error(`Pin warnings for a matching circuit: ${JSON.stringify(final.codeProblems)}`);
+    const pinEditor = await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(file), vscode.ViewColumn.One);
+    const pinColumn = CODE.split('\n')[1].indexOf('D5');
+    const swapPin = async (to) => {
+      await pinEditor.edit((edit) => edit.replace(new vscode.Range(1, pinColumn, 1, pinColumn + 2), to));
+      await pinEditor.document.save();
+      for (let i = 0; i < 50 && (await step({ action: 'read' })).codeProblems.length !== (to === 'D5' ? 0 : 1); i++) await sleep(100);
+      return (await step({ action: 'read' })).codeProblems;
+    };
+    const pinWarnings = await swapPin('D6');
+    report.steps.pinWarning = pinWarnings[0]?.message;
+    if (pinWarnings.length !== 1 || pinWarnings[0].line !== 2) throw new Error(`No pin warning for D6: ${JSON.stringify(pinWarnings)}`);
+    await vscode.commands.executeCommand('workbench.action.focusNextGroup');
+    await step({ action: 'click', selector: '#problems [data-problem-line]' });
+    await sleep(500);
+    const lineEditor = vscode.window.activeTextEditor;
+    report.steps.pinWarningOpens = `${lineEditor ? path.basename(lineEditor.document.fileName) : null}:${(lineEditor?.selection.active.line ?? -2) + 1}`;
+    if (report.steps.pinWarningOpens !== 'code.py:2') throw new Error(`The pin warning opened ${report.steps.pinWarningOpens}`);
+    if ((await swapPin('D5')).length > 0) throw new Error('The pin warning stayed after the fix');
+
     // Autocomplete setup writes stubs and settings into the project.
     await vscode.commands.executeCommand('circuitBench.setupEditor');
     report.steps.stubsInstalled = fs.existsSync(path.join(folder, 'typings', 'digitalio-stubs'));
@@ -288,10 +309,14 @@ async function run() {
       await vscode.workspace.applyEdit(edit);
       await document.save();
     };
-    await addLine(program.document, 'print("RELOADED")\n');
+    await addLine(program.document, 'import board\nprint("RELOADED", board.D6 is not None)\n');
     await step({ action: 'waitConsole', text: 'Code saved, reloading' });
     report.steps.saveToReloadMs = (await step({ action: 'waitConsole', text: 'RELOADED' })).ms;
     await step({ action: 'waitRunning', running: true });
+    // The pin check reads the saved program too, so the new line's unwired D6 is a warning.
+    const reloadedPins = (await step({ action: 'read' })).codeProblems;
+    report.steps.pinWarningAfterReload = reloadedPins.map((problem) => `${problem.pin}:${problem.line}`).join(' ');
+    if (report.steps.pinWarningAfterReload !== 'D6:2') throw new Error(`The pin check missed the reloaded program: ${JSON.stringify(reloadedPins)}`);
 
     // Two runs at once, as from a double click, leave one board, and Stop stops it. They are
     // started directly because clicks in the page do not reliably overlap.

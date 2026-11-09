@@ -1,8 +1,11 @@
-// Tests the out-of-spec checks and the multimeter without running any firmware.
+// Tests the out-of-spec checks, the multimeter and the code-against-circuit pin check without
+// running any firmware.
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { test } from 'node:test';
 import { BOARD_PINS, CATALOG, SUPPLY_LIMITS, defaultProps, emptyCircuit } from '../shared/catalog.js';
 import { unsimulated } from '../shared/nets.js';
+import { boardUses, pinProblems } from '../shared/pin-check.js';
 import { Circuit, PIN_MODE } from '../sim/circuit.js';
 
 const AMPS = 1;
@@ -206,4 +209,89 @@ test('parts with no path to the board or a battery are left out of the simulatio
   const { parts, wires } = unsimulated(doc);
   assert.deepEqual([...parts].sort(), ['lone', 'pair1', 'pair2']);
   assert.deepEqual([...wires].map((wire) => wire.id), ['w2']);
+});
+
+// --- Code against circuit ---
+
+const LED_ON_D5 = [{ id: 'r', type: 'resistor' }, { id: 'l', type: 'led' }];
+const LED_ON_D5_WIRES = [['board:D5', 'r:1'], ['r:2', 'l:A'], ['l:K', 'board:GND1']];
+const program = (...lines) => ['import board', 'import digitalio', ...lines].join('\n');
+
+test('a pin the code uses but nothing is wired to is a warning at that line', () => {
+  const problems = pinProblems(program('led = digitalio.DigitalInOut(board.D6)'), document(LED_ON_D5, LED_ON_D5_WIRES));
+  assert.equal(problems.length, 1);
+  assert.equal(problems[0].severity, 'warning');
+  assert.equal(problems[0].line, 3);
+  assert.equal(problems[0].file, 'code.py');
+  assert.equal(problems[0].part, 'board');
+  assert.equal(problems[0].pin, 'D6');
+  assert.equal(problems[0].message, 'code.py line 3 uses board.D6, but nothing is wired to D6. D5 is wired, but the code never uses it.');
+});
+
+test('a pin with a part on it is not a warning, through a breadboard as well', () => {
+  assert.deepEqual(pinProblems(program('led = digitalio.DigitalInOut(board.D5)'), document(LED_ON_D5, LED_ON_D5_WIRES)), []);
+  const breadboard = document([{ id: 'bb', type: 'breadboard-half', x: 0, y: 400 }, { id: 'l', type: 'led', x: 20, y: 440 }],
+    [['board:A2', 'bb:a0'], ['bb:a1', 'board:GND1']]);
+  assert.deepEqual(pinProblems(program('x = board.A2'), breadboard), []);
+  assert.equal(pinProblems(program('x = board.A3'), breadboard).length, 1);
+  // A wire to an empty breadboard row reaches nothing.
+  const empty = document([{ id: 'bb', type: 'breadboard-half', x: 0, y: 400 }], [['board:A2', 'bb:a5']]);
+  assert.equal(pinProblems(program('x = board.A2'), empty).length, 1);
+});
+
+test('the on-board LED and NeoPixel need no wires', () => {
+  const bare = document([], []);
+  assert.deepEqual(pinProblems(program('a = board.LED', 'b = board.D13', 'c = board.NEOPIXEL'), bare), []);
+});
+
+test('aliases and buses check the pins they stand for', () => {
+  const bare = document([], []);
+  const i2c = pinProblems(program('i2c = board.I2C()'), bare);
+  assert.equal(i2c.length, 1);
+  assert.match(i2c[0].message, /uses board\.I2C\(\), but nothing is wired to SCL and SDA\./);
+  const sensor = document([{ id: 's', type: 'mcp9808' }], [['s:SCL', 'board:SCL'], ['s:SDA', 'board:SDA'], ['s:VCC', 'board:3V'], ['s:GND', 'board:GND1']]);
+  assert.deepEqual(pinProblems(program('i2c = board.I2C()', 'import busio', 'bus = busio.I2C(board.SCL, board.SDA)'), sensor), []);
+  const halfWired = document([{ id: 's', type: 'mcp9808' }], [['s:SCL', 'board:SCL']]);
+  assert.match(pinProblems(program('i2c = board.I2C()'), halfWired)[0].message, /nothing is wired to SDA\.$/);
+
+  assert.match(pinProblems(program('uart = board.UART()'), bare)[0].message, /D1 \(TX\) or D0 \(RX\)/);
+  assert.match(pinProblems(program('tx = board.TX'), bare)[0].message, /uses board\.TX, but nothing is wired to D1 \(TX\)/);
+  const onD1 = document(LED_ON_D5, [['board:D1', 'r:1'], ['r:2', 'l:A'], ['l:K', 'board:GND1']]);
+  assert.deepEqual(pinProblems(program('tx = board.TX', 'uart = board.UART()'), onD1), []);
+});
+
+test('the pin check reads imports, and skips comments and strings', () => {
+  const circuit = document(LED_ON_D5, LED_ON_D5_WIRES);
+  const ignored = [
+    'import board',
+    '# board.D6 is free',
+    'print("board.D7")',
+    '"""',
+    'board.D8 in a docstring',
+    '"""',
+    "x = 'it''s' + board.D5.__class__.__name__",
+    'board_id = board.board_id',
+  ].join('\n');
+  assert.deepEqual(pinProblems(ignored, circuit), []);
+
+  const imported = 'from board import D5, D9 as SERVO\nimport digitalio\n\nservo = digitalio.DigitalInOut(SERVO)';
+  const [problem] = pinProblems(imported, circuit);
+  assert.equal(problem.line, 4);
+  assert.match(problem.message, /board\.D9, but nothing is wired to D9/);
+
+  const renamed = pinProblems('import board as b\nx = b.D6\ny = board.D7', circuit);
+  assert.deepEqual(renamed.map((p) => p.pin), ['D6']);
+  assert.deepEqual(pinProblems('x = 1', circuit), []);
+  assert.deepEqual(boardUses('import board\nx = board.D6\ny = board.D6').map((use) => use.line), [2]);
+});
+
+test('the example projects get no pin warnings', () => {
+  const examples = new URL('../examples/', import.meta.url);
+  const names = fs.readdirSync(examples);
+  assert.ok(names.length >= 5);
+  for (const name of names) {
+    const circuit = JSON.parse(fs.readFileSync(new URL(`${name}/circuit.json`, examples), 'utf8'));
+    const code = fs.readFileSync(new URL(`${name}/code.py`, examples), 'utf8');
+    assert.deepEqual(pinProblems(code, circuit), [], name);
+  }
 });

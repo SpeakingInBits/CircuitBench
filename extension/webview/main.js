@@ -1,6 +1,7 @@
 // The circuit builder: place parts, draw wires, and show the running simulation.
 import { BOARD_TYPE, CATALOG, CATEGORIES, defaultProps, definition, emptyCircuit, partBounds, pinPosition } from '../shared/catalog.js';
 import { buildNets, pinKey, unsimulated } from '../shared/nets.js';
+import { pinProblems } from '../shared/pin-check.js';
 import { frameLinks } from '../shared/traceback.js';
 import { escapeXml, holePattern, partArt, partLabel, partTransform, smoke, warningMark } from './art.js';
 import { createDiagram } from './diagram.js';
@@ -31,6 +32,8 @@ const state = {
   views: {},
   board: {},
   problems: [],
+  program: null, // The program's text and file name, to check against the circuit: { text, file }
+  codeProblems: [], // Board pins the program uses that nothing is wired to. Shown running or not.
   undo: [],
   redo: [],
   zoom: 1.6,
@@ -221,12 +224,10 @@ function problemSpot({ part: id, pin }) {
 // redrawn only when they change, so the smoke keeps drifting between frames.
 function renderStatus() {
   const marks = new Map();
-  if (state.running) {
-    for (const problem of state.problems) {
-      const spot = problemSpot(problem);
-      const key = `${problem.part}:${problem.pin ?? ''}`;
-      if (spot && marks.get(key)?.severity !== 'error') marks.set(key, { ...spot, severity: problem.severity });
-    }
+  for (const problem of [...(state.running ? state.problems : []), ...state.codeProblems]) {
+    const spot = problemSpot(problem);
+    const key = `${problem.part}:${problem.pin ?? ''}`;
+    if (spot && marks.get(key)?.severity !== 'error') marks.set(key, { ...spot, severity: problem.severity });
   }
   const text = JSON.stringify([...marks]);
   if (text === state.statusText) return;
@@ -237,6 +238,7 @@ function renderStatus() {
 
 function render() {
   state.idle = state.running ? unsimulated(state.doc) : null;
+  checkProgram();
   const background = [];
   const front = [];
   for (const part of state.doc.parts) (definition(part.type).background ? background : front).push(partGroup(part));
@@ -1080,12 +1082,23 @@ function showTab(name) {
   $('tab-problems').classList.toggle('active', !onConsole);
 }
 
+// Compares the program with the circuit again, after either one changes.
+function checkProgram() {
+  const problems = state.program && !state.loadError ? pinProblems(state.program.text, state.doc, state.program.file) : [];
+  const text = JSON.stringify(problems);
+  if (text === state.codeProblemText) return;
+  state.codeProblemText = text;
+  state.codeProblems = problems;
+  renderProblems();
+}
+
 function renderProblems() {
-  const count = state.problems.length;
+  const problems = [...state.problems, ...state.codeProblems];
+  const count = problems.length;
   $('problem-count').textContent = count ? `(${count})` : '';
-  $('tab-problems').classList.toggle('alert', state.problems.some((p) => p.severity === 'error'));
+  $('tab-problems').classList.toggle('alert', problems.some((p) => p.severity === 'error'));
   $('problems').innerHTML = count
-    ? state.problems.map((p) => `<button class="problem ${p.severity}" data-problem-part="${escapeXml(p.part)}"><span class="tag">${p.severity}</span><span>${escapeXml(p.message)}</span></button>`).join('')
+    ? problems.map((p) => `<button class="problem ${p.severity}" data-problem-part="${escapeXml(p.part)}"${p.line ? ` data-problem-line="${p.line}"` : ''}><span class="tag">${p.severity}</span><span>${escapeXml(p.message)}</span></button>`).join('')
     : '<p class="empty">No problems found.</p>';
 }
 
@@ -1231,6 +1244,11 @@ const handlers = {
   },
   libraryHint: (message) => showLibraryHint(message.name),
   frame: applyFrame,
+  program(message) {
+    state.program = { text: message.text, file: message.file };
+    checkProgram();
+    renderStatus();
+  },
   running: (message) => setRunning(message.running),
   audioStart(message) {
     state.audioFormat = message;
@@ -1279,7 +1297,10 @@ $('diagram').addEventListener('click', () => (state.diagram ? closeDiagram() : o
 $('export').addEventListener('click', () => vscode.postMessage({ type: 'export' }));
 $('import').addEventListener('click', () => vscode.postMessage({ type: 'import' }));
 $('problems').addEventListener('click', (event) => {
-  const id = event.target.closest('[data-problem-part]')?.dataset.problemPart;
+  const button = event.target.closest('[data-problem-part]');
+  const id = button?.dataset.problemPart;
+  // A problem in the program opens it at that line.
+  if (button?.dataset.problemLine) vscode.postMessage({ type: 'showLine', line: Number(button.dataset.problemLine) });
   if (!id || !partById(id)) return;
   state.selection = [{ kind: 'part', id }];
   refreshSelection();
