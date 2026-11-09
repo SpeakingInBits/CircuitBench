@@ -529,6 +529,24 @@ async function run() {
     await session.exportTo('package', exportPath('project.circuitbench'));
     await step({ action: 'click', selector: '#stop' });
     await step({ action: 'waitRunning', running: false });
+
+    // Once stopped, a part can be picked up and moved in 3D, and undo puts it back.
+    await step({ action: 'click', selector: '#view3d' });
+    await waitFor3d(step, () => true);
+    await sleep(300);
+    const resting = (await step({ action: 'doc' })).parts.find((p) => p.id === pushed);
+    const dragged = await step({ action: 'drag3d', id: pushed, by: { x: 80, y: 40 } });
+    report.steps.drag3d = dragged;
+    if (dragged.x === resting.x && dragged.y === resting.y) throw new Error('Dragging in 3D did not move the part');
+    if (dragged.x % 10 !== 0 || dragged.y % 10 !== 0) throw new Error(`A 3D drag left the part off the grid: ${JSON.stringify(dragged)}`);
+    if (dragged.selection.map((item) => item.id).join() !== pushed || dragged.selected !== 1) {
+      throw new Error(`Dragging in 3D did not select the part: ${JSON.stringify(dragged)}`);
+    }
+    await step({ action: 'key', key: 'z', ctrl: true });
+    const putBack = (await step({ action: 'doc' })).parts.find((p) => p.id === pushed);
+    if (putBack.x !== resting.x || putBack.y !== resting.y) throw new Error('Undo did not put back a part moved in 3D');
+    await step({ action: 'click', selector: '#view3d' });
+
     for (const name of ['circuit.png', 'diagram.png']) {
       if (fs.readFileSync(exportPath(name)).toString('latin1', 1, 4) !== 'PNG') throw new Error(`${name} is not a PNG`);
     }

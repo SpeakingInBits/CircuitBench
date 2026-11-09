@@ -16,7 +16,9 @@ const RECT = /<rect x="(-?[\d.]+)" y="(-?[\d.]+)" width="([\d.]+)" height="([\d.
 const CIRCLE = /<circle cx="(-?[\d.]+)" cy="(-?[\d.]+)" r="([\d.]+)" fill="([^"]+)"([^>]*)>/g;
 
 const isBoard = (entry) => entry.category === 'Boards' && !entry.background;
-const isSolid = (fill, extra) => fill !== 'none' && !fill.startsWith('url(') && !extra.includes('opacity');
+// Boards and breadboards, which other parts stand on.
+export const isSurface = (entry) => entry.background || isBoard(entry);
+const isSolid =(fill, extra) => fill !== 'none' && !fill.startsWith('url(') && !extra.includes('opacity');
 
 // The largest solid shape in a part's 2D art is its body, so a new part needs no 3D model.
 export function artBody(svg) {
@@ -71,7 +73,7 @@ export function surfaceAt(supports, x, y) {
 // The height a part stands at: the table, or the board its legs reach.
 export function partBase(part, supports) {
   const entry = definition(part.type);
-  if (entry.background || isBoard(entry)) return 0;
+  if (isSurface(entry)) return 0;
   const points = entry.pins.length ? entry.pins.map((pin) => pinPosition(part, pin)) : [{ x: part.x, y: part.y }];
   return Math.max(...points.map((point) => surfaceAt(supports, point.x, point.y)));
 }

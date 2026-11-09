@@ -146,6 +146,8 @@ body.running .part.interactive { cursor: pointer; }
 #stage3d canvas { display: block; width: 100%; height: 100%; outline: none; touch-action: none; cursor: grab; }
 #stage3d canvas:active { cursor: grabbing; }
 #stage3d canvas.pressable { cursor: pointer; }
+#stage3d canvas.movable { cursor: move; }
+#stage3d canvas.holding { cursor: grabbing; }
 #stage3d canvas:focus-visible { outline: 1px solid var(--vscode-focusBorder, #39f); outline-offset: -1px; }
 .hint { position: absolute; left: 8px; bottom: 6px; margin: 0; color: #fffc; font-size: 11px; pointer-events: none; }
 
