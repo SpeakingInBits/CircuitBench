@@ -204,6 +204,7 @@ function renderOverlay(pointer) {
     for (const mark of state.hoverNet ?? []) html += `<circle class="net-mark" cx="${mark.x}" cy="${mark.y}" r="3.2"/>`;
   }
   $('layer-overlay').innerHTML = html;
+  state.scene3d?.showSelection(selectedParts().map((part) => part.id));
 }
 
 function renderLabels() {
@@ -286,8 +287,18 @@ async function toggle3d() {
       pressable: pressableParts,
       press: (id) => pressPart(partById(id)),
       release: releaseHeld,
+      movable: () => !locked(),
+      grab: grabPart,
+      drag: (point) => state.drag && dragTo(point),
+      drop: endPointer,
+      toggle: (id) => toggleSelected({ kind: 'part', id }),
+      clear: () => {
+        state.selection = [];
+        refreshSelection();
+      },
     });
     state.scene3d.sync(state.doc, viewOf);
+    state.scene3d.showSelection(selectedParts().map((part) => part.id));
     state.scene3d.fit();
     button.textContent = '2D view';
     button.disabled = false;
@@ -588,6 +599,16 @@ function startDrag(grabbed, point, collapse) {
   };
 }
 
+// Selects a part and starts dragging it, in 2D or 3D. A part that is already one of several
+// selected drags the whole selection.
+function grabPart(id, point) {
+  const part = partById(id);
+  const grouped = isSelected('part', id) && state.selection.length > 1;
+  if (!grouped) state.selection = [{ kind: 'part', id }];
+  refreshSelection();
+  startDrag(part, point, grouped);
+}
+
 canvas.addEventListener('pointerdown', (event) => {
   canvas.focus();
   canvas.setPointerCapture(event.pointerId);
@@ -652,11 +673,7 @@ canvas.addEventListener('pointerdown', (event) => {
     return;
   }
   if (partElement) {
-    const part = partById(partElement.dataset.part);
-    const grouped = isSelected('part', part.id) && state.selection.length > 1;
-    if (!grouped) state.selection = [item];
-    refreshSelection();
-    startDrag(part, point, grouped);
+    grabPart(partElement.dataset.part, point);
     return;
   }
   state.selection = [];
@@ -680,6 +697,7 @@ function dragTo(point) {
   renderWires();
   renderLabels();
   renderOverlay();
+  state.scene3d?.sync(state.doc, viewOf);
 }
 
 canvas.addEventListener('pointermove', (event) => {
@@ -787,7 +805,8 @@ canvas.addEventListener('wheel', (event) => {
 
 window.addEventListener('keydown', (event) => {
   const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName) || event.target.id === 'console';
-  if (typing) return;
+  // The 3D view keeps the arrow keys for turning itself.
+  if (typing || event.defaultPrevented) return;
   const mod = event.ctrlKey || event.metaKey;
   const key = event.key.toLowerCase();
   const nudge = { arrowleft: [-GRID, 0], arrowright: [GRID, 0], arrowup: [0, -GRID], arrowdown: [0, GRID] }[key];

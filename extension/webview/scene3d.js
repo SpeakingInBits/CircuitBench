@@ -1,5 +1,5 @@
-// The 3D view of a circuit. It only shows the circuit: all editing stays in the 2D canvas.
-// main.js imports this file the first time a student opens the view, so three.js costs nothing
+// The 3D view of a circuit. Parts can be picked and dragged here, but main.js does the moving,
+// sharing the 2D canvas's drag, so snapping, undo and saving work the same in both. main.js imports this file the first time a student opens the view, so three.js costs nothing
 // until then. It draws only when something changes, and dispose() gives the memory back.
 //
 // Every part gets a body and legs from its catalog entry and 2D art, with the art on top, so a
@@ -7,10 +7,12 @@
 import * as THREE from './vendor/three/three.module.js';
 import { BOARD_TYPE, definition, pinPosition } from '../shared/catalog.js';
 import { BAND, LED_HEX, holePattern, partArt, resistorBands } from './art.js';
-import { BOARD_TOP, BREADBOARD_TOP, HEADER_TOP, partBase, partBody, sceneBounds, surfaces, wireRoute } from './layout3d.js';
+import { BOARD_TOP, BREADBOARD_TOP, HEADER_TOP, isSurface, partBase, partBody, sceneBounds, surfaces, wireRoute } from './layout3d.js';
 
 const TABLE_COLOR = '#56636d'; // Matches the 2D canvas.
 const METAL = '#c4c7cc';
+const SELECTED = '#3399ff'; // The 2D canvas's selection outline.
+const CLICK_SLOP = 4; // Pixels the pointer can move before a click becomes a drag.
 const FIELD_OF_VIEW = 32;
 const LOWEST_VIEW = 1.45; // Radians from straight down, which keeps the camera above the table.
 const BAR = new THREE.CylinderGeometry(1, 1, 1, 12);
@@ -355,10 +357,26 @@ function disposeTree(object) {
   });
 }
 
+// Everything but the glow around lights, which would make the box far too big.
+function solidBox(root) {
+  const box = new THREE.Box3();
+  root.updateWorldMatrix(true, true);
+  root.traverse((child) => {
+    if (child.isMesh) box.expandByObject(child);
+  });
+  return box;
+}
+
 // Throws if this computer can't show WebGL at all.
 // `pressable` gives the ids of the parts that respond to a press right now. `press` and `release`
 // are called as one is pressed and let go.
-export function createScene3d(container, { pressable = () => new Set(), press = () => {}, release = () => {} } = {}) {
+// `movable` says whether parts can be moved right now. `grab` is called with a part and the point
+// on the table under the pointer, then `drag` as the pointer moves and `drop` when it lets go.
+// `toggle` adds a part to the selection or takes it out, and `clear` empties the selection.
+export function createScene3d(container, {
+  pressable = () => new Set(), press = () => {}, release = () => {},
+  movable = () => false, grab = () => {}, drag = () => {}, drop = () => {}, toggle = () => {}, clear = () => {},
+} = {}) {
   const hardware = hasGraphicsHardware();
   const renderer = new THREE.WebGLRenderer({ antialias: hardware });
   const canvas = renderer.domElement;
@@ -366,7 +384,7 @@ export function createScene3d(container, { pressable = () => new Set(), press = 
   renderer.shadowMap.enabled = hardware;
   canvas.tabIndex = 0;
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', '3D view of the circuit. Use the arrow keys to turn it, and plus and minus to zoom.');
+  canvas.setAttribute('aria-label', '3D view of the circuit. Drag a part to move it. Use the arrow keys to turn the view, and plus and minus to zoom.');
   container.prepend(canvas);
 
   const scene = new THREE.Scene();
@@ -388,11 +406,16 @@ export function createScene3d(container, { pressable = () => new Set(), press = 
   const glowTexture = makeGlowTexture();
   const stats = { frames: 0, artDrawn: 0, artFailed: 0 };
   let circuit = new THREE.Group();
-  let parts = new Map();
+  let wires = new THREE.Group();
+  let parts = new Map(); // id -> { root, update, view }
   let wireCount = 0;
   let savedDoc;
+  let savedShape;
   let lastDoc = { parts: [], wires: [] };
   let frameRequest = 0;
+  let selected = [];
+  const marks = new THREE.Group(); // Boxes around the selected parts.
+  scene.add(marks);
 
   function draw() {
     frameRequest = 0;
@@ -425,6 +448,7 @@ export function createScene3d(container, { pressable = () => new Set(), press = 
     scene.remove(circuit);
     disposeTree(circuit);
     circuit = new THREE.Group();
+    wires = new THREE.Group(); // The old wires went with the old circuit.
     parts = new Map();
     const supports = surfaces(doc);
     const textureLimit = hardware ? 1536 : 1024;
@@ -440,26 +464,51 @@ export function createScene3d(container, { pressable = () => new Set(), press = 
       };
       const update = (BUILDERS[part.type] ?? standardPart)({ part, root, solid, events, glowTexture, textureLimit });
       root.userData.part = part.id;
-      root.position.set(part.x, partBase(part, supports), part.y);
+      root.userData.surface = isSurface(definition(part.type));
       root.rotation.y = -THREE.MathUtils.degToRad(part.rotation ?? 0);
       if (part.flip) root.scale.x = -1;
       circuit.add(root);
-      parts.set(part.id, { update, view: null });
+      parts.set(part.id, { root, update, view: null });
     }
-
-    wireCount = 0;
-    doc.wires.forEach((wire, index) => {
-      const route = wireRoute(doc, wire, index, supports);
-      if (!route) return;
-      const curve = new THREE.CatmullRomCurve3(route.map((p) => at(p.x, p.h, p.y)), false, 'centripetal');
-      circuit.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 56, 1.1, 8), new THREE.MeshStandardMaterial({ color: wire.color, roughness: 0.5 })));
-      wireCount++;
-    });
 
     circuit.traverse((child) => {
       if (child.isMesh) child.castShadow = child.receiveShadow = true;
     });
     scene.add(circuit);
+    place(doc);
+  }
+
+  // Puts every part where the circuit says and redraws the wires. This is all a move needs, so
+  // dragging a part does not rebuild the parts or redraw their art.
+  function place(doc) {
+    const supports = surfaces(doc);
+    for (const part of doc.parts) parts.get(part.id)?.root.position.set(part.x, partBase(part, supports), part.y);
+
+    circuit.remove(wires);
+    disposeTree(wires);
+    wires = new THREE.Group();
+    wireCount = 0;
+    doc.wires.forEach((wire, index) => {
+      const route = wireRoute(doc, wire, index, supports);
+      if (!route) return;
+      const curve = new THREE.CatmullRomCurve3(route.map((p) => at(p.x, p.h, p.y)), false, 'centripetal');
+      const mesh = new THREE.Mesh(new THREE.TubeGeometry(curve, 56, 1.1, 8), new THREE.MeshStandardMaterial({ color: wire.color, roughness: 0.5 }));
+      mesh.castShadow = mesh.receiveShadow = true;
+      wires.add(mesh);
+      wireCount++;
+    });
+    circuit.add(wires);
+    drawMarks();
+  }
+
+  function drawMarks() {
+    disposeTree(marks);
+    marks.clear();
+    for (const id of selected) {
+      const root = parts.get(id)?.root;
+      if (root) marks.add(new THREE.Box3Helper(solidBox(root).expandByScalar(2), SELECTED));
+    }
+    invalidate();
   }
 
   function resize() {
@@ -515,61 +564,118 @@ export function createScene3d(container, { pressable = () => new Set(), press = 
     invalidate();
   }
 
-  // --- Pressing parts ---
+  // --- Pressing and moving parts ---
 
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
+  const floor = new THREE.Plane(UP.clone(), 0); // The level a held part slides along.
+  const onFloor = new THREE.Vector3();
+
+  function aim(event) {
+    const box = canvas.getBoundingClientRect();
+    pointer.set(((event.clientX - box.left) / box.width) * 2 - 1, 1 - ((event.clientY - box.top) / box.height) * 2);
+    raycaster.setFromCamera(pointer, camera);
+  }
+
+  // Everything along the pointer's line that belongs to a part, nearest first. Wires are looked
+  // through, and so is the table.
+  function partHits(event) {
+    aim(event);
+    const found = [];
+    for (const hit of raycaster.intersectObject(circuit, true)) {
+      let object = hit.object;
+      while (object && object.userData.part === undefined) object = object.parent;
+      if (object) found.push({ id: object.userData.part, surface: object.userData.surface, point: hit.point });
+    }
+    return found;
+  }
 
   // The first pressable part along the pointer's line. Wires and boards are looked through, which
   // keeps small parts easy to hit from any angle.
   function pressableAt(event) {
     const targets = pressable();
     if (targets.size === 0) return undefined;
-    const box = canvas.getBoundingClientRect();
-    pointer.set(((event.clientX - box.left) / box.width) * 2 - 1, 1 - ((event.clientY - box.top) / box.height) * 2);
-    raycaster.setFromCamera(pointer, camera);
-    for (const hit of raycaster.intersectObject(circuit, true)) {
-      for (let object = hit.object; object; object = object.parent) {
-        if (targets.has(object.userData.part)) return object.userData.part;
-      }
-    }
-    return undefined;
+    return partHits(event).find((hit) => targets.has(hit.id))?.id;
   }
 
-  let dragging = null;
+  // The part to pick up. Parts standing on a board or breadboard win over it, even where the
+  // pointer's line clips the board's edge first, and the board itself is picked anywhere else.
+  function movableAt(event) {
+    const found = partHits(event);
+    return found.find((hit) => !hit.surface) ?? found[0];
+  }
+
+  // Where the pointer's line meets the level the held part was picked up at, in the 2D canvas's
+  // units. Null when the pointer is above the horizon.
+  function floorPoint(event) {
+    aim(event);
+    return raycaster.ray.intersectPlane(floor, onFloor) ? { x: onFloor.x, y: onFloor.z } : null;
+  }
+
+  let looking = null; // Turning or panning the view: { x, y, panning, travel, clears }
+  let holding = false; // Dragging a part.
   let pressing = false;
-  const moves = (event) => event.shiftKey || event.altKey || event.button === 1 || event.button === 2;
+  const pans = (event) => event.shiftKey || event.altKey || event.button === 1;
   canvas.addEventListener('contextmenu', (event) => event.preventDefault());
   canvas.addEventListener('pointerdown', (event) => {
     canvas.focus();
     canvas.setPointerCapture(event.pointerId);
-    const part = event.button === 0 && !moves(event) ? pressableAt(event) : undefined;
-    if (part !== undefined) {
+    const plain = event.button === 0 && !pans(event);
+    const pressed = plain ? pressableAt(event) : undefined;
+    if (pressed !== undefined) {
       pressing = true;
-      press(part);
+      press(pressed);
       return;
     }
-    dragging = { x: event.clientX, y: event.clientY, moving: moves(event) };
+    const hit = plain && movable() ? movableAt(event) : undefined;
+    if (hit && (event.ctrlKey || event.metaKey)) {
+      toggle(hit.id);
+      return;
+    }
+    if (hit) {
+      floor.constant = -hit.point.y;
+      holding = true;
+      canvas.classList.add('holding');
+      grab(hit.id, { x: hit.point.x, y: hit.point.z });
+      return;
+    }
+    // A click on empty table lets go of the selection, but turning the view keeps it.
+    looking = { x: event.clientX, y: event.clientY, panning: pans(event), travel: 0, clears: plain && movable() };
   });
   canvas.addEventListener('pointermove', (event) => {
-    if (!dragging) {
-      if (!pressing) canvas.classList.toggle('pressable', pressableAt(event) !== undefined);
+    if (holding) {
+      const point = floorPoint(event);
+      if (point) drag(point);
       return;
     }
-    const dx = event.clientX - dragging.x;
-    const dy = event.clientY - dragging.y;
-    dragging.x = event.clientX;
-    dragging.y = event.clientY;
-    if (dragging.moving) moveBy(dx, dy);
+    if (!looking) {
+      if (pressing) return;
+      const pressed = pressableAt(event) !== undefined;
+      canvas.classList.toggle('pressable', pressed);
+      canvas.classList.toggle('movable', !pressed && movable() && movableAt(event) !== undefined);
+      return;
+    }
+    const dx = event.clientX - looking.x;
+    const dy = event.clientY - looking.y;
+    looking.x = event.clientX;
+    looking.y = event.clientY;
+    looking.travel += Math.abs(dx) + Math.abs(dy);
+    if (looking.panning) moveBy(dx, dy);
     else turnBy(-dx * 0.008, -dy * 0.008);
   });
-  const stopDragging = () => {
-    dragging = null;
+  const letGo = () => {
+    if (looking?.clears && looking.travel <= CLICK_SLOP) clear();
+    looking = null;
+    if (holding) {
+      holding = false;
+      canvas.classList.remove('holding');
+      drop();
+    }
     if (pressing) release();
     pressing = false;
   };
-  canvas.addEventListener('pointerup', stopDragging);
-  canvas.addEventListener('pointercancel', stopDragging);
+  canvas.addEventListener('pointerup', letGo);
+  canvas.addEventListener('pointercancel', letGo);
   canvas.addEventListener('wheel', (event) => {
     event.preventDefault();
     zoomBy(Math.exp(event.deltaY * 0.0012));
@@ -605,16 +711,26 @@ export function createScene3d(container, { pressable = () => new Set(), press = 
   return {
     fit,
     updatePart,
-    // Shows a circuit, rebuilding the scene only if the circuit itself changed.
+    // Shows a circuit, rebuilding the scene only if the circuit itself changed. When only places
+    // changed, as they do in a drag, the parts just move and the wires are redrawn.
     sync(doc, viewOf) {
       const text = JSON.stringify(doc);
       lastDoc = doc;
       if (text !== savedDoc) {
         savedDoc = text;
-        build(doc);
+        const shape = JSON.stringify(doc.parts.map(({ x, y, ...rest }) => rest));
+        if (shape === savedShape) place(doc);
+        else build(doc);
+        savedShape = shape;
       }
       for (const part of doc.parts) updatePart(part, viewOf(part));
       invalidate();
+    },
+    // Outlines the selected parts.
+    showSelection(ids) {
+      if (ids.join() === selected.join()) return;
+      selected = [...ids];
+      drawMarks();
     },
     // Where a part appears on the screen, for the automated tests.
     screenPoint(id) {
@@ -628,6 +744,7 @@ export function createScene3d(container, { pressable = () => new Set(), press = 
       hardware,
       parts: parts.size,
       wires: wireCount,
+      selected: marks.children.length,
       textures: renderer.info.memory.textures,
       geometries: renderer.info.memory.geometries,
       triangles: renderer.info.render.triangles,

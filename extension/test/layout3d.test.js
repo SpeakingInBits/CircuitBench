@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CATALOG, defaultProps, emptyCircuit } from '../shared/catalog.js';
-import { BOARD_TOP, BREADBOARD_TOP, HEADER_TOP, artBody, partBase, partBody, sceneBounds, surfaces, wireRoute } from '../webview/layout3d.js';
+import { BOARD_TYPE, CATALOG, defaultProps, definition, emptyCircuit } from '../shared/catalog.js';
+import { BOARD_TOP, BREADBOARD_TOP, HEADER_TOP, artBody, isSurface, partBase, partBody, sceneBounds, surfaces, wireRoute } from '../webview/layout3d.js';
 
 const part = (id, type, x, y, rotation = 0) => ({ id, type, x, y, rotation, props: defaultProps(type) });
 
@@ -48,6 +48,12 @@ test('parts stand on the breadboard or the table, depending on their pins', () =
   assert.equal(partBase(loose, supports), 0);
   assert.equal(partBase(onBoard, supports), BOARD_TOP);
   assert.equal(partBase(doc.parts[1], supports), 0, 'a breadboard stands on the table');
+});
+
+test('boards and breadboards are surfaces, and parts are not', () => {
+  assert.equal(isSurface(definition('breadboard-half')), true);
+  assert.equal(isSurface(definition(BOARD_TYPE)), true);
+  assert.equal(isSurface(definition('resistor')), false);
 });
 
 test('a rotated breadboard still holds parts in its new position', () => {
