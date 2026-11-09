@@ -1,6 +1,6 @@
 // Turns the circuit into files: images of the build and the diagram, and a parts list.
 import { definition, partBounds } from '../shared/catalog.js';
-import { holePattern, partArt, partLabel, partTransform } from './art.js';
+import { escapeXml, holePattern, partArt, partLabel, partTransform } from './art.js';
 import { partValue, renderDiagram } from './diagram-art.js';
 import { layoutDiagram } from './diagram-layout.js';
 import { wirePath, wirePoints } from './editing.js';
@@ -36,7 +36,7 @@ export function circuitImage(doc, viewOf = () => undefined) {
   const layer = (background) => doc.parts.filter((part) => !!definition(part.type).background === background).map(group).join('');
   const wires = doc.wires.map((wire) => {
     const d = wirePath(doc, wire);
-    return d ? `<path d="${d}" fill="none" stroke="${wire.color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>` : '';
+    return d ? `<path d="${d}" fill="none" stroke="${escapeXml(wire.color)}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>` : '';
   }).join('');
   const content = `<defs>${holePattern()}</defs><rect x="${left}" y="${top}" width="${width}" height="${height}" fill="${WORKBENCH_COLOR}"/>`
     + layer(true) + layer(false) + wires + doc.parts.map(partLabel).join('');

@@ -41,6 +41,8 @@ export class Board extends EventEmitter {
     });
     this.worker.on('message', (message) => this.handle(message));
     this.worker.on('error', (error) => this.emit('crash', String(error?.stack ?? error)));
+    // A running board never ends by itself, so this means it failed or was stopped.
+    this.worker.on('exit', () => this.emit('exit'));
   }
 
   handle(message) {

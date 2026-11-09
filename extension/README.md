@@ -34,7 +34,7 @@ computer or hand it in, see [Export and import](#export-and-import).
 | Line parts up | Select two or more, then press Left, Center, Right, Top, Middle or Bottom |
 | Copy, cut, paste | Ctrl+C, Ctrl+X, Ctrl+V. Ctrl+D duplicates |
 | Delete | Select it and press Delete |
-| Undo or redo | Ctrl+Z or Ctrl+Y |
+| Undo or redo | Ctrl+Z, and Ctrl+Y or Ctrl+Shift+Z |
 | Pan or zoom | Drag the background, or use the mouse wheel |
 
 Hover over a pin to see its name and everything connected to it. Select a part to give it a label,
@@ -44,9 +44,10 @@ on the canvas.
 
 ## Run it
 
-Press **Run**. While it runs, press parts on the canvas, or use the controls on the right. The
-**Serial console** shows `print()` output: click it and press Ctrl+C to stop your program and reach
-the REPL.
+Press **Run**, or F5 while the simulator has the focus. **Stop** is Shift+F5. While it runs, press
+parts on the canvas, or use the controls on the right: Tab reaches them, and Space or Enter holds a
+button down. The **Serial console** shows `print()` output: click it and press Ctrl+C to stop your
+program and reach the REPL. Scroll up to read earlier output, and back to the end to follow it again.
 
 Run saves your open project files first, so it always runs what you see. Like a real board, saving
 `code.py`, or any file in the project such as one in `lib`, while your program runs restarts it with

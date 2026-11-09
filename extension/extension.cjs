@@ -415,7 +415,15 @@ class Session {
     ['frame', 'audioStart', 'audio', 'audioStop'].forEach(forward);
     board.on('nvm', ({ data }) => { this.nvm = data; });
     board.on('reset', () => this.run());
-    board.on('crash', (text) => this.post({ type: 'serial', text: `\n[Simulator error] ${text}\n` }));
+    // A board that fails or ends by itself is gone, and the page must not go on showing it as running.
+    const ended = () => {
+      if (this.board === board) this.stop();
+    };
+    board.on('crash', (text) => {
+      this.post({ type: 'serial', text: `\n[Simulator error] ${text}\n` });
+      ended();
+    });
+    board.on('exit', ended);
     this.post({ type: 'running', running: true });
   }
 
@@ -737,13 +745,23 @@ async function copyToBoard() {
   }
   const answer = await vscode.window.showWarningMessage(`Copy this project to ${drive}? Files with the same names will be replaced.`, { modal: true }, 'Copy');
   if (answer !== 'Copy') return;
-  const files = readProjectFiles(folder);
-  for (const [file, data] of Object.entries(files)) {
-    const target = path.join(drive, file);
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, data);
+  try {
+    // The board has to get what the student just typed, as Run does.
+    await saveProjectFiles(folder);
+    const files = Object.entries(readProjectFiles(folder));
+    // A board's drive is slow, so the writes must not hold up the rest of VS Code.
+    await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Copying to ${drive}` }, async (progress) => {
+      for (const [file, data] of files) {
+        const target = path.join(drive, file);
+        await fs.promises.mkdir(path.dirname(target), { recursive: true });
+        await fs.promises.writeFile(target, data);
+        progress.report({ increment: 100 / files.length, message: file.slice(1) });
+      }
+    });
+    vscode.window.showInformationMessage(`Copied ${files.length} files to ${drive}.`);
+  } catch (error) {
+    vscode.window.showErrorMessage(`Could not copy the project to ${drive}: ${error.message}`);
   }
-  vscode.window.showInformationMessage(`Copied ${Object.keys(files).length} files to ${drive}.`);
 }
 
 function activate(context) {

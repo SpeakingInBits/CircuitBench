@@ -28,6 +28,7 @@ export class SerialFilter {
 
 // Adds text to what the console shows, with backspace removing the last character.
 export function typeInto(content, text) {
+  if (!text.includes('\b')) return content + text;
   let result = content;
   for (const character of text) {
     if (character === '\b') result = result.slice(0, -1);

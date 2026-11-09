@@ -9,7 +9,7 @@
 <body>
 <header class="toolbar">
   <button id="run" class="primary" title="Run the program (F5)">Run</button>
-  <button id="stop" disabled title="Stop the program">Stop</button>
+  <button id="stop" disabled title="Stop the program (Shift+F5)">Stop</button>
   <span class="divider"></span>
   <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
   <button id="redo" title="Redo (Ctrl+Y)">Redo</button>
@@ -23,7 +23,7 @@
   <span class="divider"></span>
   <button id="export" title="Save an image, a parts list or a project package">Export</button>
   <button id="import" title="Open a project package">Import</button>
-  <span id="status" class="status">Stopped</span>
+  <span id="status" class="status" role="status">Stopped</span>
 </header>
 <main class="layout">
   <aside class="palette" aria-label="Parts">
@@ -52,8 +52,8 @@
   </aside>
   <section class="bottom">
     <div class="tabs" role="tablist">
-      <button id="tab-console" class="tab active" role="tab">Serial console</button>
-      <button id="tab-problems" class="tab" role="tab">Problems <span id="problem-count"></span></button>
+      <button id="tab-console" class="tab active" role="tab" aria-selected="true" aria-controls="console">Serial console</button>
+      <button id="tab-problems" class="tab" role="tab" aria-selected="false" aria-controls="problems">Problems <span id="problem-count"></span></button>
       <span class="status" id="board-title"></span>
     </div>
     <pre id="console" tabindex="0" aria-label="Serial console"></pre>

@@ -57,6 +57,10 @@
         "contents": "Build a circuit and test your CircuitPython code on a simulated Metro M0 Express.\n[Open Circuit Simulator](command:circuitBench.open)\n[Run My Code](command:circuitBench.run)\nRun My Code runs code.py, or the Python file you have open.\nStarting a new project?\n[New Project from Example](command:circuitBench.newProject)\n[Import Project Package](command:circuitBench.importPackage)\nMore tools:\n[Set Up Autocomplete](command:circuitBench.setupEditor)\n[Export Project](command:circuitBench.export)"
       }
     ],
+    "keybindings": [
+      { "command": "circuitBench.run", "key": "f5", "when": "activeWebviewPanelId == 'circuitBench'" },
+      { "command": "circuitBench.stop", "key": "shift+f5", "when": "activeWebviewPanelId == 'circuitBench'" }
+    ],
     "menus": {
       "editor/title": [
         { "command": "circuitBench.open", "when": "resourceLangId == python || resourceFilename == circuit.json", "group": "navigation" }

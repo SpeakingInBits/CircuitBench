@@ -259,3 +259,11 @@ test('nothing printed is lost or garbled by batching', async () => {
   assert.equal(output.split('é'.repeat(100)).length - 1, 400);
   assert.ok(!output.includes('\ufffd'));
 });
+
+test('a board that cannot start reports why and then ends', async () => {
+  const board = new Board({ files: { '/code.py': 'print("hi")\n' }, circuit: { version: 1, parts: [], wires: [] } });
+  const crashed = new Promise((resolve) => { board.once('crash', resolve); });
+  const ended = new Promise((resolve) => { board.once('exit', resolve); });
+  assert.match(await crashed, /The circuit has no board/);
+  await ended;
+});
