@@ -162,6 +162,7 @@ class Session {
   async loadCircuit() {
     this.circuit = await this.readCircuit();
     this.post({ type: 'load', circuit: this.circuit, error: this.circuitError });
+    this.sendProgram();
     if (this.circuitError) this.showCircuitError();
   }
 
@@ -189,7 +190,10 @@ class Session {
   // Remembers the program, because no text editor is active while the panel has focus.
   noteEditor(editor) {
     const document = editor?.document;
-    if (document?.languageId === 'python' && document.uri.scheme === 'file') this.document = document;
+    if (document?.languageId === 'python' && document.uri.scheme === 'file') {
+      this.document = document;
+      this.sendProgram();
+    }
   }
 
   // The open Python file runs as code.py, if it sits at the top of this project.
@@ -199,9 +203,38 @@ class Session {
     return sameFolder(this.folder, path.dirname(document.uri.fsPath)) ? document : undefined;
   }
 
+  // The page compares the program with the circuit, so it gets the program whenever that may have
+  // changed: the open Python file at the top of the project, or else code.py.
+  sendProgram() {
+    if (!this.panel || !this.folder) return;
+    const document = this.programDocument();
+    const file = document?.uri.fsPath ?? path.join(this.folder, 'code.py');
+    let text = document?.getText();
+    try {
+      text ??= fs.readFileSync(file, 'utf8');
+    } catch {
+      // No code.py yet, so there is nothing to compare.
+    }
+    this.programPath = text === undefined ? undefined : file;
+    this.post({ type: 'program', text: text ?? '', file: path.basename(file) });
+  }
+
+  // Opens the program at a line the Problems tab points to, beside the panel.
+  async showLine(line) {
+    if (!this.programPath) return;
+    const document = await vscode.workspace.openTextDocument(this.programPath);
+    const shown = vscode.window.visibleTextEditors.find((editor) => editor.document === document);
+    const start = new vscode.Position(Math.max(0, line - 1), 0);
+    await vscode.window.showTextDocument(document, {
+      viewColumn: shown?.viewColumn ?? vscode.ViewColumn.One,
+      selection: new vscode.Range(start, start),
+    });
+  }
+
   // Like a real board, saving a file the program reads restarts a running program with it.
   async onDocumentSaved(document) {
     if (!this.panel || !this.folder || document.uri.scheme !== 'file') return;
+    if (document.languageId === 'python') this.sendProgram();
     const file = document.uri.fsPath;
     if (sameFolder(file, this.circuitPath())) {
       await this.stop();
@@ -270,6 +303,7 @@ class Session {
       case 'input': this.board?.write(message.text); break;
       case 'control': this.board?.setControl(message.part, message.control, message.value); break;
       case 'export': this.exportProject(); break;
+      case 'showLine': this.showLine(message.line); break;
       case 'import': vscode.commands.executeCommand('circuitBench.importPackage'); break;
       case 'openFrame': this.openFrame(message.file, message.line); break;
       case 'addLibrary': this.addMissingLibrary(message.name); break;

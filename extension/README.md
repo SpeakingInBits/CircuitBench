@@ -72,6 +72,14 @@ because the simulation cannot reach them.
 | Batteries | 2A |
 | Powered parts | Their supply voltage, or `+` and `-` swapped |
 
+**Problems** also compares `code.py` with the circuit, whether or not it is running. If the program
+uses a board pin that nothing is wired to, it warns, for example "code.py line 3 uses board.D6, but
+nothing is wired to D6. D5 is wired, but the code never uses it." Click the warning to open the
+program at that line. `board.LED` (D13) and `board.NEOPIXEL` have parts on the board, so they need
+no wires. `board.TX` and `board.RX` are D1 and D0, `board.I2C()` needs SCL and SDA, `board.SPI()`
+needs SCK, and `board.UART()` needs D1 or D0. Comments and strings are skipped. The check reads the
+program as text, so a pin chosen at run time, such as with `getattr(board, name)`, is not checked.
+
 ## Multimeter
 
 Add a **Multimeter** from the Tools list and wire up its red and black probes. Click it while the
