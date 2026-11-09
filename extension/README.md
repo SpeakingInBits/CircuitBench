@@ -4,6 +4,8 @@ Build circuits and test CircuitPython in VS Code, without a physical board. The 
 real CircuitPython 10.3.1 compiled to WebAssembly, set up to behave like an Adafruit Metro M0
 Express, so your `code.py` can move to a real board unchanged.
 
+![The builder running the dimmer example: parts on the left, a lit LED and potentiometer wired to the board, the knob's slider on the right, and the program's printed output in the serial console](images/screenshots/builder.png)
+
 ## Get started
 
 1. Click the **Circuit Bench** icon (a circuit board) in the bar on the far left of VS Code. Its
@@ -131,6 +133,8 @@ Packages saved as `.metrosim` by earlier versions still open.
 
 ## Circuit diagram
 
+![The dimmer circuit as a schematic: the board's D5 pin through a resistor to an LED, and A0 to a potentiometer between 3.3V and ground](images/screenshots/diagram.png)
+
 Press **Diagram** in the builder, run **Circuit Bench: Show Circuit Diagram**, or open
 `circuit.json` to see the circuit as a schematic. It shows how parts are joined rather than where
 they sit, so breadboards disappear and only the board pins in use are drawn. Power and ground are
@@ -148,6 +152,8 @@ To work on the diagram outside VS Code, serve the `extension` folder over HTTP a
 `test/diagram-preview.html?example=dimmer`.
 
 ## 3D view
+
+![The LED and button example in 3D: the board beside a breadboard, with jumper wires arching between them and the LED lit green](images/screenshots/3d-view.png)
 
 The 3D view button shows the circuit in 3D. Students wire in the 2D canvas, but they can pick up parts and move them in 3D: drag a part to move it, Ctrl-click to select several, and press R, F or Delete as in 2D. Moves snap to the grid and land in breadboard holes, and undo puts them back. While a program runs, clicking a part works as it does in 2D: press a button, flip a switch or change the multimeter's mode. Dragging the table, or right-dragging anywhere, turns the view, and Shift-drag pans it. Smoke, warning signs, grey parts and notes only show on the 2D canvas. Close the view to free its memory.
 

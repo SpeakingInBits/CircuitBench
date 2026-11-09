@@ -30,6 +30,8 @@ done
 
 mkdir -p ../dist
 # The extension is in a subfolder of the repository, so its README's relative links need this base on the Marketplace.
+# Images need the raw file: a blob link is a web page, which shows as a broken image.
 "${vsce[@]}" package "$version" --no-git-tag-version --no-update-package-json --no-dependencies \
   --baseContentUrl https://github.com/SpeakingInBits/CircuitBench/blob/HEAD/extension \
+  --baseImagesUrl https://github.com/SpeakingInBits/CircuitBench/raw/HEAD/extension \
   --out "../dist/circuit-bench-$version.vsix"
