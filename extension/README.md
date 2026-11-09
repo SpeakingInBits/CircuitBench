@@ -6,10 +6,13 @@ Express, so your `code.py` can move to a real board unchanged.
 
 ## Get started
 
-1. Run **Circuit Bench: New Project from Example** from the Command Palette.
-2. Open `code.py`, then run **Circuit Bench: Run on Simulator**.
-3. Use **Circuit Bench: Set Up CircuitPython Autocomplete** for suggestions as you type. This
-   needs the Python extension.
+1. Click the **Circuit Bench** icon (a circuit board) in the bar on the far left of VS Code. Its
+   buttons do everything below, and every one is also in the Command Palette under
+   **Circuit Bench**.
+2. Click **New Project from Example**, or **Import Project Package** for a project someone gave you.
+3. Open `code.py`, then click **Run My Code**, or the Run ▶ button at the top right of the editor.
+   The circuit board button beside it opens the simulator without running anything.
+4. Click **Set Up Autocomplete** for suggestions as you type. This needs the Python extension.
 
 Each project is a folder holding `code.py`, your circuit in `circuit.json`, and a `lib` folder.
 Opening `circuit.json` shows its [circuit diagram](#circuit-diagram). To move a project to another

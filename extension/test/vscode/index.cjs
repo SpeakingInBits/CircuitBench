@@ -101,12 +101,27 @@ async function run() {
   const holdMs = Number(process.env.SIM_TEST_HOLD_MS ?? 0);
   const report = { vscode: vscode.version, node: process.versions.node, steps: {} };
   try {
+    // The activity bar's Circuit Bench view opens in a folder with no project in it yet, that
+    // starts the extension, and every button on it runs a command the extension has.
+    const extension = vscode.extensions.getExtension('SpeakingInBits.circuit-bench');
+    report.steps.activeBeforeView = extension.isActive;
+    await vscode.commands.executeCommand('workbench.view.extension.circuitBench');
+    for (let i = 0; i < 100 && !extension.isActive; i++) await sleep(100);
+    if (!extension.isActive) throw new Error('Opening the Circuit Bench view did not start the extension');
+    const { contributes } = extension.packageJSON;
+    const buttons = contributes.viewsWelcome.flatMap(({ contents }) => [...contents.matchAll(/\(command:([\w.]+)\)/g)].map((match) => match[1]));
+    const editorButtons = contributes.menus['editor/title'].map(({ command }) => command);
+    const registered = new Set(await vscode.commands.getCommands(true));
+    const missing = [...buttons, ...editorButtons].filter((command) => !registered.has(command));
+    report.steps.startViewButtons = buttons.length;
+    if (buttons.length < 6 || missing.length) throw new Error(`Buttons with no command: ${missing.join(', ') || 'too few buttons'}`);
+    await vscode.commands.executeCommand('workbench.view.explorer');
+
     const file = path.join(folder, 'code.py');
     fs.writeFileSync(file, CODE);
     const document = await vscode.workspace.openTextDocument(file);
     await vscode.window.showTextDocument(document, vscode.ViewColumn.One);
     await vscode.commands.executeCommand('circuitBench.open');
-    const extension = vscode.extensions.getExtension('SpeakingInBits.circuit-bench');
     const { session } = extension.exports;
     const catalog = await import(path.join(extension.extensionPath, 'shared', 'catalog.js').replace(/\\/g, '/').replace(/^([A-Z]):/, 'file:///$1:'));
     // A step that fails inside the page never answers, so give up rather than hang.

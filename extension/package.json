@@ -30,7 +30,7 @@
       }
     ],
     "commands": [
-      { "command": "circuitBench.open", "title": "Open Circuit Simulator", "category": "Circuit Bench" },
+      { "command": "circuitBench.open", "title": "Open Circuit Simulator", "category": "Circuit Bench", "icon": "$(circuit-board)" },
       { "command": "circuitBench.diagram", "title": "Show Circuit Diagram", "category": "Circuit Bench" },
       { "command": "circuitBench.run", "title": "Run on Simulator", "category": "Circuit Bench", "icon": "$(play)" },
       { "command": "circuitBench.stop", "title": "Stop Simulator", "category": "Circuit Bench", "icon": "$(debug-stop)" },
@@ -41,7 +41,26 @@
       { "command": "circuitBench.export", "title": "Export Project", "category": "Circuit Bench" },
       { "command": "circuitBench.importPackage", "title": "Import Project Package", "category": "Circuit Bench" }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        { "id": "circuitBench", "title": "Circuit Bench", "icon": "$(circuit-board)" }
+      ]
+    },
+    "views": {
+      "circuitBench": [
+        { "id": "circuitBench.start", "name": "Start", "icon": "$(circuit-board)" }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "circuitBench.start",
+        "contents": "Build a circuit and test your CircuitPython code on a simulated Metro M0 Express.\n[Open Circuit Simulator](command:circuitBench.open)\n[Run My Code](command:circuitBench.run)\nRun My Code runs code.py, or the Python file you have open.\nStarting a new project?\n[New Project from Example](command:circuitBench.newProject)\n[Import Project Package](command:circuitBench.importPackage)\nMore tools:\n[Set Up Autocomplete](command:circuitBench.setupEditor)\n[Export Project](command:circuitBench.export)"
+      }
+    ],
     "menus": {
+      "editor/title": [
+        { "command": "circuitBench.open", "when": "resourceLangId == python || resourceFilename == circuit.json", "group": "navigation" }
+      ],
       "editor/title/run": [
         { "command": "circuitBench.run", "when": "resourceLangId == python", "group": "navigation" }
       ]
