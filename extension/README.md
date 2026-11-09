@@ -46,6 +46,19 @@ Press **Run**. While it runs, press parts on the canvas, or use the controls on 
 **Serial console** shows `print()` output: click it and press Ctrl+C to stop your program and reach
 the REPL.
 
+Run saves your open project files first, so it always runs what you see. Like a real board, saving
+`code.py`, or any file in the project such as one in `lib`, while your program runs restarts it with
+the new code, and the console shows `Code saved, reloading.` Saving while it is stopped does not
+start it.
+
+If your program stops with an error, the line it stopped on gets a red squiggle, and the error is
+listed in VS Code's **Problems** tab. When the error is inside a `.py` file in your project's `lib`
+folder, that line is marked too, along with the line in your program that called it. In the console,
+click `File "code.py", line 4` to open that line. The marks go away when you edit the file, or when
+the program runs or reloads. If the error is `ImportError: no module named 'adafruit_hcsr04'` and
+Circuit Bench has that library, the console offers to add it, and so does the light bulb on the
+squiggle.
+
 **Problems** warns about mistakes that would matter on a real board. A part being damaged smokes on
 the canvas, and a part that is only wired wrong gets a warning sign. Hover over the part to read why,
 or click the problem to select the part. Parts with no connection to the board or a battery turn grey,
@@ -61,6 +74,14 @@ because the simulation cannot reach them.
 | NPN transistors | 600mA collector, 100mA base |
 | Batteries | 2A |
 | Powered parts | Their supply voltage, or `+` and `-` swapped |
+
+**Problems** also compares `code.py` with the circuit, whether or not it is running. If the program
+uses a board pin that nothing is wired to, it warns, for example "code.py line 3 uses board.D6, but
+nothing is wired to D6. D5 is wired, but the code never uses it." Click the warning to open the
+program at that line. `board.LED` (D13) and `board.NEOPIXEL` have parts on the board, so they need
+no wires. `board.TX` and `board.RX` are D1 and D0, `board.I2C()` needs SCL and SDA, `board.SPI()`
+needs SCK, and `board.UART()` needs D1 or D0. Comments and strings are skipped. The check reads the
+program as text, so a pin chosen at run time, such as with `getattr(board, name)`, is not checked.
 
 ## Multimeter
 

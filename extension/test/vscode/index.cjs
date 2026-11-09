@@ -65,6 +65,27 @@ async function diagramTab() {
   throw new Error('circuit.json did not open as a diagram');
 }
 
+// The simulator's error marks on a file, once they are what the test expects.
+async function waitForDiagnostics(uri, ready) {
+  let found;
+  for (let i = 0; i < 100; i++) {
+    found = vscode.languages.getDiagnostics(uri).filter((diagnostic) => diagnostic.source === 'CircuitPython');
+    if (ready(found)) return found;
+    await sleep(100);
+  }
+  throw new Error(`The error marks on ${path.basename(uri.fsPath)} were never as expected: ${found.map((d) => d.message)}`);
+}
+
+async function waitForPage(step, ready) {
+  let page;
+  for (let i = 0; i < 100; i++) {
+    page = await step({ action: 'read' });
+    if (ready(page)) return page;
+    await sleep(100);
+  }
+  throw new Error(`The page never showed what was expected: ${JSON.stringify({ console: page.console, libraryHint: page.libraryHint })}`);
+}
+
 async function waitFor3d(step, ready) {
   for (let i = 0; i < 100; i++) {
     const { view3d } = await step({ action: 'read' });
@@ -218,6 +239,27 @@ async function run() {
     report.sharedArrayBufferInWebview = final.sharedArrayBuffer;
     report.problems = final.problems;
 
+    // Problems compares the program with the circuit, and a pin warning opens the program at its line.
+    if (final.codeProblems.length > 0) throw new Error(`Pin warnings for a matching circuit: ${JSON.stringify(final.codeProblems)}`);
+    const pinEditor = await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(file), vscode.ViewColumn.One);
+    const pinColumn = CODE.split('\n')[1].indexOf('D5');
+    const swapPin = async (to) => {
+      await pinEditor.edit((edit) => edit.replace(new vscode.Range(1, pinColumn, 1, pinColumn + 2), to));
+      await pinEditor.document.save();
+      for (let i = 0; i < 50 && (await step({ action: 'read' })).codeProblems.length !== (to === 'D5' ? 0 : 1); i++) await sleep(100);
+      return (await step({ action: 'read' })).codeProblems;
+    };
+    const pinWarnings = await swapPin('D6');
+    report.steps.pinWarning = pinWarnings[0]?.message;
+    if (pinWarnings.length !== 1 || pinWarnings[0].line !== 2) throw new Error(`No pin warning for D6: ${JSON.stringify(pinWarnings)}`);
+    await vscode.commands.executeCommand('workbench.action.focusNextGroup');
+    await step({ action: 'click', selector: '#problems [data-problem-line]' });
+    await sleep(500);
+    const lineEditor = vscode.window.activeTextEditor;
+    report.steps.pinWarningOpens = `${lineEditor ? path.basename(lineEditor.document.fileName) : null}:${(lineEditor?.selection.active.line ?? -2) + 1}`;
+    if (report.steps.pinWarningOpens !== 'code.py:2') throw new Error(`The pin warning opened ${report.steps.pinWarningOpens}`);
+    if ((await swapPin('D5')).length > 0) throw new Error('The pin warning stayed after the fix');
+
     // Autocomplete setup writes stubs and settings into the project.
     await vscode.commands.executeCommand('circuitBench.setupEditor');
     report.steps.stubsInstalled = fs.existsSync(path.join(folder, 'typings', 'digitalio-stubs'));
@@ -275,6 +317,22 @@ async function run() {
       throw new Error('Restart left old control values on the page');
     }
 
+    // Saving the program while it runs reloads it with the new code, as a real board does.
+    const addLine = async (document, text) => {
+      const edit = new vscode.WorkspaceEdit();
+      edit.insert(document.uri, new vscode.Position(0, 0), text);
+      await vscode.workspace.applyEdit(edit);
+      await document.save();
+    };
+    await addLine(program.document, 'import board\nprint("RELOADED", board.D6 is not None)\n');
+    await step({ action: 'waitConsole', text: 'Code saved, reloading' });
+    report.steps.saveToReloadMs = (await step({ action: 'waitConsole', text: 'RELOADED' })).ms;
+    await step({ action: 'waitRunning', running: true });
+    // The pin check reads the saved program too, so the new line's unwired D6 is a warning.
+    const reloadedPins = (await step({ action: 'read' })).codeProblems;
+    report.steps.pinWarningAfterReload = reloadedPins.map((problem) => `${problem.pin}:${problem.line}`).join(' ');
+    if (report.steps.pinWarningAfterReload !== 'D6:2') throw new Error(`The pin check missed the reloaded program: ${JSON.stringify(reloadedPins)}`);
+
     // Two runs at once, as from a double click, leave one board, and Stop stops it. They are
     // started directly because clicks in the page do not reliably overlap.
     const reopened = await vscode.window.showTextDocument(program.document, vscode.ViewColumn.One);
@@ -290,6 +348,12 @@ async function run() {
     await sleep(500);
     report.steps.outputStoppedAfterStop = afterStop === (await step({ action: 'read' })).console;
     if (!report.steps.outputStoppedAfterStop) throw new Error('A board kept running after Stop');
+
+    // Saving while stopped leaves it stopped.
+    await addLine(reopened.document, '# saved while stopped\n');
+    await sleep(500);
+    report.steps.boardAfterSaveWhileStopped = session.board === undefined ? 'none' : 'running';
+    if (session.board || (await step({ action: 'read' })).running) throw new Error('Saving while stopped started the program');
 
     // Stop still counts when it arrives while a run is starting.
     await Promise.all([session.run(), session.stop()]);
@@ -312,6 +376,63 @@ async function run() {
     await vscode.window.showTextDocument(helper.document, vscode.ViewColumn.One);
     await step({ action: 'click', selector: '#run' });
     await step({ action: 'waitConsole', text: 'HELPER 2' });
+    await step({ action: 'click', selector: '#stop' });
+    await step({ action: 'waitRunning', running: false });
+
+    // A program that stops with an error gets a mark on the line, and a link to it in the console.
+    const replaceAll = (editor, text) => editor.edit((edit) => edit.replace(new vscode.Range(0, 0, editor.document.lineCount, 0), text));
+    const programUri = vscode.Uri.file(file);
+    const typo = await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(file), vscode.ViewColumn.One);
+    await replaceAll(typo, 'import board, digitalio\nled = digitalio.DigitalInOut(board.D13)\nled.direction = digitalio.Direction.OUTPUT\nled.valu = 1\n');
+    await step({ action: 'click', selector: '#run' });
+    const [typoError] = await waitForDiagnostics(programUri, (found) => found.length > 0);
+    report.steps.typoDiagnostic = `${typoError.range.start.line + 1}: ${typoError.message}`;
+    if (typoError.range.start.line !== 3 || !typoError.message.startsWith('AttributeError')) throw new Error(`Wrong error mark: ${report.steps.typoDiagnostic}`);
+    await step({ action: 'waitConsole', text: 'Code done running' });
+    report.steps.consoleLinks = (await step({ action: 'read' })).consoleLinks;
+    if (report.steps.consoleLinks.join() !== 'File "code.py", line 4') throw new Error(`Wrong console links: ${report.steps.consoleLinks}`);
+    await vscode.window.showTextDocument(helper.document, vscode.ViewColumn.One);
+    await step({ action: 'click', selector: '#console .trace-link' });
+    for (let i = 0; i < 50 && vscode.window.activeTextEditor?.document.uri.fsPath !== programUri.fsPath; i++) await sleep(100);
+    const jumped = vscode.window.activeTextEditor;
+    if (jumped?.document.uri.fsPath !== programUri.fsPath || jumped.selection.active.line !== 3) throw new Error('The console link did not open the line');
+    await jumped.edit((edit) => edit.insert(new vscode.Position(3, 0), '# '));
+    await waitForDiagnostics(programUri, (found) => found.length === 0);
+
+    // An error inside a project library marks the library's line and the program's call.
+    await replaceAll(jumped, 'import helper\n\nhelper.go()\n');
+    // The helper's editor is hidden now, so its text is changed without it.
+    const helperEdit = new vscode.WorkspaceEdit();
+    helperEdit.replace(helper.document.uri, new vscode.Range(0, 0, helper.document.lineCount, 0), 'def go():\n    return 1 / 0\n');
+    await vscode.workspace.applyEdit(helperEdit);
+    await step({ action: 'click', selector: '#run' });
+    const [libraryError] = await waitForDiagnostics(helper.document.uri, (found) => found.length > 0);
+    const [callError] = await waitForDiagnostics(programUri, (found) => found.length > 0);
+    report.steps.libraryDiagnostics = [libraryError, callError].map((d) => `${d.range.start.line + 1}: ${d.message}`);
+    if (libraryError.range.start.line !== 1 || callError.range.start.line !== 2 || !callError.message.startsWith('ZeroDivisionError')) {
+      throw new Error(`Wrong marks for an error in a library: ${report.steps.libraryDiagnostics}`);
+    }
+
+    // A missing library is offered, from the console and as a fix, and then the program runs.
+    await replaceAll(jumped, 'import adafruit_hcsr04\nprint("SONAR LOADED")\n');
+    await step({ action: 'click', selector: '#run' });
+    const [importError] = await waitForDiagnostics(programUri, (found) => found.length > 0);
+    if (importError.code !== 'missing-library') throw new Error(`A missing library was not recognized: ${importError.message}`);
+    const fixes = await vscode.commands.executeCommand('vscode.executeCodeActionProvider', programUri, importError.range);
+    report.steps.libraryFix = fixes.map((fix) => fix.title).find((title) => title.includes('adafruit_hcsr04'));
+    if (!report.steps.libraryFix) throw new Error('No fix was offered for a missing library');
+    await waitForPage(step, (page) => page.libraryHint === 'Add adafruit_hcsr04');
+    await step({ action: 'click', selector: '#add-library' });
+    await waitForPage(step, (page) => page.libraryHint === null);
+    if (!fs.existsSync(path.join(folder, 'lib', 'adafruit_hcsr04.mpy'))) throw new Error('The missing library was not added');
+    if (vscode.languages.getDiagnostics(programUri).length === 0) throw new Error('The error mark went away before the program ran again');
+    // Saving another project file reloads the program, which takes away the mark on code.py.
+    const touchHelper = new vscode.WorkspaceEdit();
+    touchHelper.insert(helper.document.uri, new vscode.Position(0, 0), '# touched\n');
+    await vscode.workspace.applyEdit(touchHelper);
+    await helper.document.save();
+    await step({ action: 'waitConsole', text: 'SONAR LOADED' });
+    if (vscode.languages.getDiagnostics(programUri).length > 0) throw new Error('A reload left an old error mark');
     await step({ action: 'click', selector: '#stop' });
     await step({ action: 'waitRunning', running: false });
 

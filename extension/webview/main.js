@@ -1,6 +1,8 @@
 // The circuit builder: place parts, draw wires, and show the running simulation.
 import { BOARD_TYPE, CATALOG, CATEGORIES, defaultProps, definition, emptyCircuit, partBounds, pinPosition } from '../shared/catalog.js';
 import { buildNets, pinKey, unsimulated } from '../shared/nets.js';
+import { pinProblems } from '../shared/pin-check.js';
+import { frameLinks } from '../shared/traceback.js';
 import { escapeXml, holePattern, partArt, partLabel, partTransform, smoke, warningMark } from './art.js';
 import { createDiagram } from './diagram.js';
 import { alignParts, copyParts, flipParts, internalWires, moveParts, parseValue, pasteClip, rotateParts, wirePath, wirePoints } from './editing.js';
@@ -30,6 +32,8 @@ const state = {
   views: {},
   board: {},
   problems: [],
+  program: null, // The program's text and file name, to check against the circuit: { text, file }
+  codeProblems: [], // Board pins the program uses that nothing is wired to. Shown running or not.
   undo: [],
   redo: [],
   zoom: 1.6,
@@ -49,6 +53,7 @@ const state = {
   loadError: undefined, // Why circuit.json could not be used. Nothing can be edited until it is fixed.
   scene3d: null, // The 3D view, while it is open.
   diagram: null, // The circuit diagram, while it is open.
+  libraryHint: undefined, // A library the program could not import, which can be added.
 };
 
 const partById = (id) => state.doc.parts.find((part) => part.id === id);
@@ -219,12 +224,10 @@ function problemSpot({ part: id, pin }) {
 // redrawn only when they change, so the smoke keeps drifting between frames.
 function renderStatus() {
   const marks = new Map();
-  if (state.running) {
-    for (const problem of state.problems) {
-      const spot = problemSpot(problem);
-      const key = `${problem.part}:${problem.pin ?? ''}`;
-      if (spot && marks.get(key)?.severity !== 'error') marks.set(key, { ...spot, severity: problem.severity });
-    }
+  for (const problem of [...(state.running ? state.problems : []), ...state.codeProblems]) {
+    const spot = problemSpot(problem);
+    const key = `${problem.part}:${problem.pin ?? ''}`;
+    if (spot && marks.get(key)?.severity !== 'error') marks.set(key, { ...spot, severity: problem.severity });
   }
   const text = JSON.stringify([...marks]);
   if (text === state.statusText) return;
@@ -235,6 +238,7 @@ function renderStatus() {
 
 function render() {
   state.idle = state.running ? unsimulated(state.doc) : null;
+  checkProgram();
   const background = [];
   const front = [];
   for (const part of state.doc.parts) (definition(part.type).background ? background : front).push(partGroup(part));
@@ -1013,12 +1017,50 @@ $('controls').addEventListener('click', (event) => {
 
 const consoleElement = $('console');
 const serialFilter = new SerialFilter();
+let consoleText = '';
+
+// Shows the console text, with each `File "code.py", line 4` of a traceback as a link to that line.
+function renderConsole() {
+  const links = frameLinks(consoleText);
+  if (links.length === 0) {
+    consoleElement.textContent = consoleText;
+    return;
+  }
+  const pieces = [];
+  let at = 0;
+  for (const { start, end, file, line } of links) {
+    const link = document.createElement('span');
+    link.className = 'trace-link';
+    link.textContent = consoleText.slice(start, end);
+    link.title = `Open ${file.replace(/^\/+/, '')} at line ${line}`;
+    Object.assign(link.dataset, { file, line });
+    pieces.push(consoleText.slice(at, start), link);
+    at = end;
+  }
+  pieces.push(consoleText.slice(at));
+  consoleElement.replaceChildren(...pieces);
+}
 
 function appendSerial(chunk) {
   const { text, title } = serialFilter.push(chunk);
   if (title !== undefined) $('board-title').textContent = title;
-  consoleElement.textContent = typeInto(consoleElement.textContent, text).slice(-60000);
+  if (!text) return;
+  consoleText = typeInto(consoleText, text).slice(-60000);
+  renderConsole();
   consoleElement.scrollTop = consoleElement.scrollHeight;
+}
+
+consoleElement.addEventListener('click', (event) => {
+  const link = event.target.closest('.trace-link');
+  if (link) vscode.postMessage({ type: 'openFrame', file: link.dataset.file, line: Number(link.dataset.line) });
+});
+
+// Offers to add the library a program could not import. Empty hides it.
+function showLibraryHint(name) {
+  state.libraryHint = name;
+  $('library-hint-text').textContent = name ? `${name} is not in this project's lib folder.` : '';
+  $('add-library').textContent = name ? `Add ${name}` : '';
+  $('library-hint').hidden = !name || consoleElement.hidden;
 }
 
 consoleElement.addEventListener('keydown', (event) => {
@@ -1034,17 +1076,29 @@ consoleElement.addEventListener('keydown', (event) => {
 function showTab(name) {
   const onConsole = name === 'console';
   consoleElement.hidden = !onConsole;
+  $('library-hint').hidden = !onConsole || !state.libraryHint;
   $('problems').hidden = onConsole;
   $('tab-console').classList.toggle('active', onConsole);
   $('tab-problems').classList.toggle('active', !onConsole);
 }
 
+// Compares the program with the circuit again, after either one changes.
+function checkProgram() {
+  const problems = state.program && !state.loadError ? pinProblems(state.program.text, state.doc, state.program.file) : [];
+  const text = JSON.stringify(problems);
+  if (text === state.codeProblemText) return;
+  state.codeProblemText = text;
+  state.codeProblems = problems;
+  renderProblems();
+}
+
 function renderProblems() {
-  const count = state.problems.length;
+  const problems = [...state.problems, ...state.codeProblems];
+  const count = problems.length;
   $('problem-count').textContent = count ? `(${count})` : '';
-  $('tab-problems').classList.toggle('alert', state.problems.some((p) => p.severity === 'error'));
+  $('tab-problems').classList.toggle('alert', problems.some((p) => p.severity === 'error'));
   $('problems').innerHTML = count
-    ? state.problems.map((p) => `<button class="problem ${p.severity}" data-problem-part="${escapeXml(p.part)}"><span class="tag">${p.severity}</span><span>${escapeXml(p.message)}</span></button>`).join('')
+    ? problems.map((p) => `<button class="problem ${p.severity}" data-problem-part="${escapeXml(p.part)}"${p.line ? ` data-problem-line="${p.line}"` : ''}><span class="tag">${p.severity}</span><span>${escapeXml(p.message)}</span></button>`).join('')
     : '<p class="empty">No problems found.</p>';
 }
 
@@ -1183,10 +1237,18 @@ const handlers = {
   showDiagram: openDiagram,
   serial: (message) => appendSerial(message.text),
   clearConsole() {
+    consoleText = '';
     consoleElement.textContent = '';
     serialFilter.reset();
+    showLibraryHint(undefined);
   },
+  libraryHint: (message) => showLibraryHint(message.name),
   frame: applyFrame,
+  program(message) {
+    state.program = { text: message.text, file: message.file };
+    checkProgram();
+    renderStatus();
+  },
   running: (message) => setRunning(message.running),
   audioStart(message) {
     state.audioFormat = message;
@@ -1235,7 +1297,10 @@ $('diagram').addEventListener('click', () => (state.diagram ? closeDiagram() : o
 $('export').addEventListener('click', () => vscode.postMessage({ type: 'export' }));
 $('import').addEventListener('click', () => vscode.postMessage({ type: 'import' }));
 $('problems').addEventListener('click', (event) => {
-  const id = event.target.closest('[data-problem-part]')?.dataset.problemPart;
+  const button = event.target.closest('[data-problem-part]');
+  const id = button?.dataset.problemPart;
+  // A problem in the program opens it at that line.
+  if (button?.dataset.problemLine) vscode.postMessage({ type: 'showLine', line: Number(button.dataset.problemLine) });
   if (!id || !partById(id)) return;
   state.selection = [{ kind: 'part', id }];
   refreshSelection();
@@ -1245,6 +1310,7 @@ $('parts').addEventListener('click', (event) => {
   const type = event.target.dataset?.add;
   if (type) addPart(type);
 });
+$('add-library').addEventListener('click', () => vscode.postMessage({ type: 'addLibrary', name: state.libraryHint }));
 $('tab-console').addEventListener('click', () => showTab('console'));
 $('tab-problems').addEventListener('click', () => showTab('problems'));
 new ResizeObserver(() => applyTransform()).observe(canvas);

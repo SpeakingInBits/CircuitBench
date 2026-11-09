@@ -10,6 +10,8 @@ const DIAGRAM_VIEW = 'circuitBench.diagram';
 const START_VIEW = 'circuitBench.start';
 const IGNORED = new Set(['.git', '.vscode', 'typings', 'node_modules', '__pycache__', CIRCUIT_FILE]);
 const MAX_PROJECT_BYTES = 2 * 1024 * 1024;
+const MAX_TRACEBACK_CHARS = 20000;
+const MISSING_LIBRARY = 'missing-library';
 const SAVE_DELAY_MS = 300;
 
 // Everything Export can save. `suffix` keeps a project's files apart in one folder.
@@ -66,6 +68,11 @@ const sameFolder = (a, b) => path.relative(a, b) === '';
 function isInside(folder, file) {
   const relative = path.relative(folder, file);
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+// A file the board reads, the same way readProjectFiles chooses them.
+function isBoardFile(folder, file) {
+  return isInside(folder, file) && path.relative(folder, file).split(path.sep).every((name) => !IGNORED.has(name) && !name.startsWith('.'));
 }
 
 // The project is the nearest folder holding a circuit or a program, so a file in lib/ or .vscode/
@@ -133,6 +140,10 @@ class Session {
     this.queue = Promise.resolve();
     this.pendingReplies = new Map();
     this.nextRequest = 1;
+    // Where the last run's files came from, to find the files its tracebacks name.
+    this.program = undefined;
+    this.diagnostics = vscode.languages.createDiagnosticCollection('CircuitPython');
+    context.subscriptions.push(this.diagnostics);
   }
 
   post(message) {
@@ -168,6 +179,7 @@ class Session {
   async loadCircuit() {
     this.circuit = await this.readCircuit();
     this.post({ type: 'load', circuit: this.circuit, error: this.circuitError });
+    this.sendProgram();
     if (this.circuitError) this.showCircuitError();
   }
 
@@ -195,7 +207,10 @@ class Session {
   // Remembers the program, because no text editor is active while the panel has focus.
   noteEditor(editor) {
     const document = editor?.document;
-    if (document?.languageId === 'python' && document.uri.scheme === 'file') this.document = document;
+    if (document?.languageId === 'python' && document.uri.scheme === 'file') {
+      this.document = document;
+      this.sendProgram();
+    }
   }
 
   // The open Python file runs as code.py, if it sits at the top of this project.
@@ -205,10 +220,53 @@ class Session {
     return sameFolder(this.folder, path.dirname(document.uri.fsPath)) ? document : undefined;
   }
 
+  // The page compares the program with the circuit, so it gets the program whenever that may have
+  // changed: the open Python file at the top of the project, or else code.py.
+  sendProgram() {
+    if (!this.panel || !this.folder) return;
+    const document = this.programDocument();
+    const file = document?.uri.fsPath ?? path.join(this.folder, 'code.py');
+    let text = document?.getText();
+    try {
+      text ??= fs.readFileSync(file, 'utf8');
+    } catch {
+      // No code.py yet, so there is nothing to compare.
+    }
+    this.programPath = text === undefined ? undefined : file;
+    this.post({ type: 'program', text: text ?? '', file: path.basename(file) });
+  }
+
+  // Opens the program at a line the Problems tab points to, beside the panel.
+  async showLine(line) {
+    if (!this.programPath) return;
+    const document = await vscode.workspace.openTextDocument(this.programPath);
+    const shown = vscode.window.visibleTextEditors.find((editor) => editor.document === document);
+    const start = new vscode.Position(Math.max(0, line - 1), 0);
+    await vscode.window.showTextDocument(document, {
+      viewColumn: shown?.viewColumn ?? vscode.ViewColumn.One,
+      selection: new vscode.Range(start, start),
+    });
+  }
+
+  // Like a real board, saving a file the program reads restarts a running program with it.
   async onDocumentSaved(document) {
-    if (!this.panel || !this.folder || !sameFolder(document.uri.fsPath, this.circuitPath())) return;
-    await this.stop();
-    await this.loadCircuit();
+    if (!this.panel || !this.folder || document.uri.scheme !== 'file') return;
+    if (document.languageId === 'python') this.sendProgram();
+    const file = document.uri.fsPath;
+    if (sameFolder(file, this.circuitPath())) {
+      await this.stop();
+      await this.loadCircuit();
+    } else if (this.board && isBoardFile(this.folder, file)) {
+      await this.reload(this.board);
+    }
+  }
+
+  // Run saves files itself, and by the time those saves come back here it has started another
+  // board, so they do not start it again.
+  reload(board) {
+    return this.enqueue(async () => {
+      if (this.board === board) await this.startBoard('\nCode saved, reloading.\nsoft reboot\n\n');
+    });
   }
 
   async open(folder) {
@@ -262,7 +320,10 @@ class Session {
       case 'input': this.board?.write(message.text); break;
       case 'control': this.board?.setControl(message.part, message.control, message.value); break;
       case 'export': this.exportProject(); break;
+      case 'showLine': this.showLine(message.line); break;
       case 'import': vscode.commands.executeCommand('circuitBench.importPackage'); break;
+      case 'openFrame': this.openFrame(message.file, message.line); break;
+      case 'addLibrary': this.addMissingLibrary(message.name); break;
       case 'reply':
         this.pendingReplies.get(message.id)?.(message.result);
         this.pendingReplies.delete(message.id);
@@ -299,7 +360,8 @@ class Session {
     await board?.stop();
   }
 
-  async startBoard() {
+  // A reload keeps what the console showed, as a real board does, and adds `notice` to it.
+  async startBoard(notice) {
     if (!this.panel) return;
     if (this.circuitError) {
       this.showCircuitError();
@@ -320,8 +382,18 @@ class Session {
     }
     const { Board } = await import('./sim/board-host.js');
     const { emptyCircuit } = await import('./shared/catalog.js');
+    const { SerialFilter } = await import('./webview/serial-text.js');
+    const { parseTracebacks } = await import('./shared/traceback.js');
     await this.releaseBoard();
-    this.post({ type: 'clearConsole' });
+    this.post(notice ? { type: 'serial', text: notice } : { type: 'clearConsole' });
+    // Error marks, and the offer to add a library, are about the program being replaced. A reload
+    // keeps the console, so the offer is taken back separately.
+    this.diagnostics.clear();
+    if (notice) this.post({ type: 'libraryHint' });
+    this.program = {
+      folder: this.folder,
+      uri: this.programDocument()?.uri ?? vscode.Uri.file(path.join(this.folder, 'code.py')),
+    };
     const board = new Board({
       files,
       circuit: this.circuit ?? emptyCircuit(),
@@ -329,12 +401,87 @@ class Session {
     });
     this.board = board;
     const forward = (type) => board.on(type, (message) => this.post(message));
-    board.on('serial', (text) => this.post({ type: 'serial', text }));
+    // Output not yet part of a traceback that has been reported.
+    const output = new SerialFilter();
+    let unread = '';
+    board.on('serial', (text) => {
+      this.post({ type: 'serial', text });
+      unread = (unread + output.push(text).text).slice(-MAX_TRACEBACK_CHARS);
+      const traceback = parseTracebacks(unread).at(-1);
+      if (!traceback) return;
+      unread = unread.slice(traceback.end);
+      this.reportTraceback(traceback, board).catch((error) => console.error(error));
+    });
     ['frame', 'audioStart', 'audio', 'audioStop'].forEach(forward);
     board.on('nvm', ({ data }) => { this.nvm = data; });
     board.on('reset', () => this.run());
     board.on('crash', (text) => this.post({ type: 'serial', text: `\n[Simulator error] ${text}\n` }));
     this.post({ type: 'running', running: true });
+  }
+
+  // The project file a traceback names. The program runs as code.py whatever its own name is,
+  // and libraries the board only has compiled have no file to show.
+  frameUri(file) {
+    if (!this.program) return undefined;
+    const relative = file.replace(/^\/+/, '');
+    if (relative === 'code.py') return this.program.uri;
+    const full = path.join(this.program.folder, ...relative.split('/'));
+    return isInside(this.program.folder, full) && fs.existsSync(full) ? vscode.Uri.file(full) : undefined;
+  }
+
+  // Marks where the program stopped: the deepest line in the project, and the line in the
+  // program that led there, which is the one a student is most likely to need to change.
+  async reportTraceback(traceback, board) {
+    if (traceback.type === 'KeyboardInterrupt') return;
+    const { missingModule } = await import('./shared/traceback.js');
+    const places = traceback.frames.map((frame) => ({ ...frame, uri: this.frameUri(frame.file) })).filter((frame) => frame.uri);
+    const deepest = places.at(-1);
+    if (!deepest) return;
+    const fromProgram = places.findLast((place) => place.uri.toString() === this.program.uri.toString());
+    const library = missingModule(traceback);
+    const offer = library && fs.existsSync(libraryPath(this.context, library)) ? library : undefined;
+    let text = traceback.message ? `${traceback.type}: ${traceback.message}` : traceback.type;
+    if (offer) text += `. The ${offer} library is not in this project's lib folder.`;
+    const rangeOf = async ({ uri, line }) => {
+      const document = await vscode.workspace.openTextDocument(uri);
+      const row = document.lineAt(Math.min(Math.max(line - 1, 0), document.lineCount - 1));
+      return new vscode.Range(row.lineNumber, row.firstNonWhitespaceCharacterIndex, row.lineNumber, row.text.length);
+    };
+    const marked = [deepest];
+    if (fromProgram && fromProgram !== deepest) marked.push(fromProgram);
+    const located = await Promise.all(marked.map(async (place) => new vscode.Location(place.uri, await rangeOf(place))));
+    if (this.board !== board) return;
+    const where = `${path.basename(deepest.uri.fsPath)}, line ${deepest.line}`;
+    const entries = located.map((location, i) => {
+      const diagnostic = new vscode.Diagnostic(location.range, i === 0 ? text : `${text} (in ${where})`, vscode.DiagnosticSeverity.Error);
+      diagnostic.source = 'CircuitPython';
+      if (offer) diagnostic.code = MISSING_LIBRARY;
+      const other = located[1 - i];
+      if (other) diagnostic.relatedInformation = [new vscode.DiagnosticRelatedInformation(other, i === 0 ? 'Called from here' : 'The error happened here')];
+      return [location.uri, [diagnostic]];
+    });
+    // Entries for the same file are merged.
+    this.diagnostics.clear();
+    this.diagnostics.set(entries);
+    this.post({ type: 'libraryHint', name: offer });
+  }
+
+  // Opens the file a console link names, beside the panel rather than in place of it.
+  async openFrame(file, line) {
+    const uri = this.frameUri(file);
+    if (!uri) {
+      vscode.window.showInformationMessage(`${file} is not a file in this project, so it cannot be opened. It is probably part of a library.`);
+      return;
+    }
+    const editors = vscode.window.visibleTextEditors;
+    const viewColumn = editors.find((editor) => editor.document.uri.toString() === uri.toString())?.viewColumn
+      ?? editors[0]?.viewColumn ?? vscode.ViewColumn.One;
+    const position = new vscode.Position(Math.max(line - 1, 0), 0);
+    await vscode.window.showTextDocument(uri, { viewColumn, selection: new vscode.Range(position, position) });
+  }
+
+  async addMissingLibrary(name) {
+    if (await addLibrary(this.context, name, this.program?.folder ?? this.folder)) this.post({ type: 'libraryHint' });
   }
 
   // Sends the page a message and waits for its reply.
@@ -504,19 +651,34 @@ async function importPackage() {
   }
 }
 
-async function addLibrary(context) {
-  const folder = projectFolder();
+// Copies a library into the project, asking which one unless it is given. Returns whether it did.
+async function addLibrary(context, name, folder = projectFolder()) {
   if (!folder) {
     noProject();
-    return;
+    return false;
   }
   const libs = path.join(context.extensionPath, 'libs');
-  const names = fs.readdirSync(libs).map((name) => name.replace(/\.mpy$/, '')).sort();
-  const pick = await vscode.window.showQuickPick(names, { placeHolder: 'Library to copy into this project\'s lib folder' });
-  if (!pick) return;
+  const names = fs.readdirSync(libs).map((entry) => entry.replace(/\.mpy$/, '')).sort();
+  const pick = names.includes(name) ? name : await vscode.window.showQuickPick(names, { placeHolder: 'Library to copy into this project\'s lib folder' });
+  if (!pick) return false;
   installLibrary(context, folder, pick);
   vscode.window.showInformationMessage(`Added ${pick} to ${path.join(folder, 'lib')}.`);
+  return true;
 }
+
+// Offers to add the library an ImportError names, from the light bulb and the Problems tab.
+const missingLibraryFixes = {
+  provideCodeActions(document, range, { diagnostics }) {
+    return diagnostics.filter((diagnostic) => diagnostic.code === MISSING_LIBRARY).map((diagnostic) => {
+      const name = diagnostic.message.match(/no module named '([^']+)'/)?.[1];
+      const action = new vscode.CodeAction(`Add the ${name} library to this project`, vscode.CodeActionKind.QuickFix);
+      action.command = { command: 'circuitBench.addLibrary', title: action.title, arguments: [name] };
+      action.diagnostics = [diagnostic];
+      action.isPreferred = true;
+      return action;
+    });
+  },
+};
 
 // Copies CircuitPython's type stubs into the project so Pylance can offer autocomplete.
 function setupEditor(context) {
@@ -596,7 +758,8 @@ function activate(context) {
   });
   command('circuitBench.stop', () => session.stop());
   command('circuitBench.newProject', () => newProject(context));
-  command('circuitBench.addLibrary', () => addLibrary(context));
+  // A name comes from the fix for a missing library. A menu would pass something else.
+  command('circuitBench.addLibrary', (name) => addLibrary(context, typeof name === 'string' ? name : undefined));
   command('circuitBench.setupEditor', () => setupEditor(context));
   command('circuitBench.copyToBoard', copyToBoard);
   command('circuitBench.export', async () => {
@@ -609,6 +772,13 @@ function activate(context) {
     vscode.window.registerTreeDataProvider(START_VIEW, { getChildren: () => [], getTreeItem: (item) => item }),
     vscode.window.onDidChangeActiveTextEditor((editor) => session.noteEditor(editor)),
     vscode.workspace.onDidSaveTextDocument((document) => session.onDocumentSaved(document)),
+    // An error mark is out of date as soon as its file changes.
+    vscode.workspace.onDidChangeTextDocument((event) => {
+      if (event.contentChanges.length > 0) session.diagnostics.delete(event.document.uri);
+    }),
+    vscode.languages.registerCodeActionsProvider({ language: 'python', scheme: 'file' }, missingLibraryFixes, {
+      providedCodeActionKinds: [vscode.CodeActionKind.QuickFix],
+    }),
     {
       dispose() {
         session.flushSave();
