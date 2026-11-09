@@ -7,6 +7,7 @@ const vscode = require('vscode');
 
 const CIRCUIT_FILE = 'circuit.json';
 const DIAGRAM_VIEW = 'circuitBench.diagram';
+const START_VIEW = 'circuitBench.start';
 const IGNORED = new Set(['.git', '.vscode', 'typings', 'node_modules', '__pycache__', CIRCUIT_FILE]);
 const MAX_PROJECT_BYTES = 2 * 1024 * 1024;
 const SAVE_DELAY_MS = 300;
@@ -68,20 +69,36 @@ function isInside(folder, file) {
 }
 
 // The project is the nearest folder holding a circuit or a program, so a file in lib/ or .vscode/
-// still belongs to the project around it.
-function projectFolder() {
+// still belongs to the project around it. A button on an editor passes that editor's file, which
+// matters for circuit.json: its diagram is not a text editor.
+function projectFolder(resource) {
   const document = vscode.window.activeTextEditor?.document;
+  const fromButton = resource instanceof vscode.Uri;
+  const uri = fromButton ? resource : document?.uri;
   const current = session?.folder ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (document?.uri.scheme !== 'file') return current;
-  const start = path.dirname(document.uri.fsPath);
-  const workspace = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath;
+  if (uri?.scheme !== 'file') return current;
+  const start = path.dirname(uri.fsPath);
+  const workspace = vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath;
   if (workspace) {
     for (let folder = start; ; folder = path.dirname(folder)) {
       if (fs.existsSync(path.join(folder, CIRCUIT_FILE)) || fs.existsSync(path.join(folder, 'code.py'))) return folder;
       if (sameFolder(folder, workspace)) break;
     }
   }
-  return document.languageId === 'python' ? start : current;
+  const isProjectFile = path.basename(uri.fsPath) === CIRCUIT_FILE
+    || (fromButton ? uri.fsPath.endsWith('.py') : document.languageId === 'python');
+  return isProjectFile ? start : current;
+}
+
+// Explains what to do when there is no folder to work in, and offers to do it.
+async function noProject() {
+  const actions = {
+    'New Project from Example': 'circuitBench.newProject',
+    'Open Folder': 'workbench.action.files.openFolder',
+    'Import Project Package': 'circuitBench.importPackage',
+  };
+  const answer = await vscode.window.showWarningMessage('Open a project folder first, or start a new project.', ...Object.keys(actions));
+  if (answer) await vscode.commands.executeCommand(actions[answer]);
 }
 
 // Everything the board will read from disk has to include what the student just typed.
@@ -196,7 +213,7 @@ class Session {
 
   async open(folder) {
     if (!folder) {
-      vscode.window.showWarningMessage('Open a project folder first, or create one with "New Project from Example".');
+      noProject();
       return false;
     }
     if (this.panel && this.folder === folder && !this.circuitError) {
@@ -489,7 +506,10 @@ async function importPackage() {
 
 async function addLibrary(context) {
   const folder = projectFolder();
-  if (!folder) return;
+  if (!folder) {
+    noProject();
+    return;
+  }
   const libs = path.join(context.extensionPath, 'libs');
   const names = fs.readdirSync(libs).map((name) => name.replace(/\.mpy$/, '')).sort();
   const pick = await vscode.window.showQuickPick(names, { placeHolder: 'Library to copy into this project\'s lib folder' });
@@ -501,7 +521,10 @@ async function addLibrary(context) {
 // Copies CircuitPython's type stubs into the project so Pylance can offer autocomplete.
 function setupEditor(context) {
   const folder = projectFolder();
-  if (!folder) return;
+  if (!folder) {
+    noProject();
+    return;
+  }
   const stubs = path.join(context.extensionPath, 'stubs');
   if (fs.existsSync(stubs)) fs.cpSync(stubs, path.join(folder, 'typings'), { recursive: true });
   const settingsPath = path.join(folder, '.vscode', 'settings.json');
@@ -541,7 +564,10 @@ function findBoardDrive() {
 
 async function copyToBoard() {
   const folder = projectFolder();
-  if (!folder) return;
+  if (!folder) {
+    noProject();
+    return;
+  }
   const drive = findBoardDrive();
   if (!drive) {
     vscode.window.showWarningMessage('No CIRCUITPY drive found. Plug in your board with a data USB cable.');
@@ -563,7 +589,7 @@ function activate(context) {
   const diagramEditor = new DiagramEditor(context);
   session.noteEditor(vscode.window.activeTextEditor);
   const command = (id, handler) => context.subscriptions.push(vscode.commands.registerCommand(id, handler));
-  command('circuitBench.open', () => session.open(projectFolder()));
+  command('circuitBench.open', (resource) => session.open(projectFolder(resource)));
   command('circuitBench.diagram', () => session.showDiagram(projectFolder()));
   command('circuitBench.run', async () => {
     if (await session.open(projectFolder())) await session.run();
@@ -579,6 +605,8 @@ function activate(context) {
   command('circuitBench.importPackage', importPackage);
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(DIAGRAM_VIEW, diagramEditor),
+    // The Start view is all buttons. Its welcome text shows while this tree stays empty.
+    vscode.window.registerTreeDataProvider(START_VIEW, { getChildren: () => [], getTreeItem: (item) => item }),
     vscode.window.onDidChangeActiveTextEditor((editor) => session.noteEditor(editor)),
     vscode.workspace.onDidSaveTextDocument((document) => session.onDocumentSaved(document)),
     {
