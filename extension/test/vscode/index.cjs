@@ -260,6 +260,18 @@ async function run() {
       throw new Error('Restart left old control values on the page');
     }
 
+    // Saving the program while it runs reloads it with the new code, as a real board does.
+    const addLine = async (document, text) => {
+      const edit = new vscode.WorkspaceEdit();
+      edit.insert(document.uri, new vscode.Position(0, 0), text);
+      await vscode.workspace.applyEdit(edit);
+      await document.save();
+    };
+    await addLine(program.document, 'print("RELOADED")\n');
+    await step({ action: 'waitConsole', text: 'Code saved, reloading' });
+    report.steps.saveToReloadMs = (await step({ action: 'waitConsole', text: 'RELOADED' })).ms;
+    await step({ action: 'waitRunning', running: true });
+
     // Two runs at once, as from a double click, leave one board, and Stop stops it. They are
     // started directly because clicks in the page do not reliably overlap.
     const reopened = await vscode.window.showTextDocument(program.document, vscode.ViewColumn.One);
@@ -275,6 +287,12 @@ async function run() {
     await sleep(500);
     report.steps.outputStoppedAfterStop = afterStop === (await step({ action: 'read' })).console;
     if (!report.steps.outputStoppedAfterStop) throw new Error('A board kept running after Stop');
+
+    // Saving while stopped leaves it stopped.
+    await addLine(reopened.document, '# saved while stopped\n');
+    await sleep(500);
+    report.steps.boardAfterSaveWhileStopped = session.board === undefined ? 'none' : 'running';
+    if (session.board || (await step({ action: 'read' })).running) throw new Error('Saving while stopped started the program');
 
     // Stop still counts when it arrives while a run is starting.
     await Promise.all([session.run(), session.stop()]);

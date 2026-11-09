@@ -43,6 +43,11 @@ Press **Run**. While it runs, press parts on the canvas, or use the controls on 
 **Serial console** shows `print()` output: click it and press Ctrl+C to stop your program and reach
 the REPL.
 
+Run saves your open project files first, so it always runs what you see. Like a real board, saving
+`code.py`, or any file in the project such as one in `lib`, while your program runs restarts it with
+the new code, and the console shows `Code saved, reloading.` Saving while it is stopped does not
+start it.
+
 **Problems** warns about mistakes that would matter on a real board. A part being damaged smokes on
 the canvas, and a part that is only wired wrong gets a warning sign. Hover over the part to read why,
 or click the problem to select the part. Parts with no connection to the board or a battery turn grey,
