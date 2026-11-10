@@ -1132,15 +1132,19 @@ let audio;
 const tones = new Map();
 const audioContext = () => (audio ??= new AudioContext());
 
-function setTone(id, frequency) {
+const TONE_GAIN = 0.04;
+
+// `level` is how loud the buzzer is, from 0 to 1: a passive one is quieter away from 50% duty.
+function setTone(id, frequency, level = 1) {
   const existing = tones.get(id);
-  if (!frequency) {
-    existing?.stop();
+  if (!frequency || !level) {
+    existing?.oscillator.stop();
     tones.delete(id);
     return;
   }
   if (existing) {
-    existing.frequency.value = frequency;
+    existing.oscillator.frequency.value = frequency;
+    existing.volume.gain.value = TONE_GAIN * level;
     return;
   }
   const context = audioContext();
@@ -1148,10 +1152,10 @@ function setTone(id, frequency) {
   const volume = context.createGain();
   oscillator.type = 'square';
   oscillator.frequency.value = frequency;
-  volume.gain.value = 0.04;
+  volume.gain.value = TONE_GAIN * level;
   oscillator.connect(volume).connect(context.destination);
   oscillator.start();
-  tones.set(id, oscillator);
+  tones.set(id, { oscillator, volume });
 }
 
 function stopSound() {
@@ -1215,7 +1219,7 @@ function applyFrame({ views, board, problems }) {
     const part = partById(id);
     if (part?.type === 'oled-ssd1306' && view.pixels !== undefined) view.image = oledImage(view);
     state.views[id] = view;
-    if (view.tone !== undefined) setTone(id, view.tone);
+    if (view.tone !== undefined) setTone(id, view.tone, view.level);
     updatePart(id);
     updateReadouts(part, view);
   }
