@@ -39,7 +39,7 @@ merging a change to the simulator, the panel or the firmware. `NODE` is set in t
 
 | Command, from `extension` | What it covers | Needs |
 |---|---|---|
-| `"$NODE" --test test/circuit.test.js test/checks.test.js test/editing.test.js test/console.test.js test/traceback.test.js test/layout3d.test.js test/diagram.test.js` | Electrical models, out-of-spec checks, editing, export, project packages, circuit files, console text, tracebacks, 3D layout, circuit diagrams | Node only |
+| `"$NODE" --test test/circuit.test.js test/checks.test.js test/editing.test.js test/console.test.js test/traceback.test.js test/layout3d.test.js test/models3d.test.js test/diagram.test.js` | Electrical models, out-of-spec checks, editing, export, project packages, circuit files, console text, tracebacks, 3D layout, 3D models, circuit diagrams | Node only |
 | `"$NODE" --test test/*.test.js` | All of the above, plus real CircuitPython running real libraries | A built firmware |
 | `"$NODE" scripts/run-e2e.js` | The whole extension, in a real VS Code window | A built firmware and VS Code |
 

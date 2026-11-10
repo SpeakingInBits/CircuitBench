@@ -235,13 +235,13 @@ async function run() {
     report.steps.sliderToConsoleMs = (await step({ action: 'waitConsole', text: 'POT 10' })).ms;
 
     // The 3D view opens during a run, inside the webview's security policy, and follows the
-    // simulation: turning the potentiometer redraws its art.
+    // simulation: turning the potentiometer turns its dial.
     await step({ action: 'click', selector: '#view3d' });
     const view3d = await waitFor3d(step, () => true);
     report.steps.view3d = view3d;
     if (view3d.artFailed > 0 || view3d.parts !== doc.parts.length || view3d.wires !== 8) throw new Error(`3D view is wrong: ${JSON.stringify(view3d)}`);
     await step({ action: 'slider', key: `${pot}:position`, value: 0.75 });
-    report.steps.view3dFollowsRun = (await waitFor3d(step, (now) => now.artDrawn > view3d.artDrawn)).artDrawn;
+    report.steps.view3dFollowsRun = (await waitFor3d(step, (now) => now.updates > view3d.updates)).updates;
     await step({ action: 'click', selector: '#view3d' });
     if ((await step({ action: 'read' })).view3d !== null) throw new Error('3D view did not close');
 

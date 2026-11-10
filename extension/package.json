@@ -15,7 +15,7 @@
   "main": "./extension.cjs",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "test:unit": "node --test test/circuit.test.js test/checks.test.js test/editing.test.js test/console.test.js test/traceback.test.js test/layout3d.test.js test/diagram.test.js",
+    "test:unit": "node --test test/circuit.test.js test/checks.test.js test/editing.test.js test/console.test.js test/traceback.test.js test/layout3d.test.js test/models3d.test.js test/readouts.test.js test/diagram.test.js",
     "test:e2e": "node scripts/run-e2e.js",
     "assets": "node scripts/copy-assets.js"
   },

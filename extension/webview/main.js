@@ -1,5 +1,5 @@
 // The circuit builder: place parts, draw wires, and show the running simulation.
-import { BOARD_TYPE, CATALOG, CATEGORIES, defaultProps, definition, emptyCircuit, partBounds, pinPosition } from '../shared/catalog.js';
+import { BOARD_TYPE, CATALOG, CATEGORIES, defaultProps, definition, emptyCircuit, partBounds, pinPosition, readoutText } from '../shared/catalog.js';
 import { buildNets, pinKey, unsimulated } from '../shared/nets.js';
 import { pinProblems } from '../shared/pin-check.js';
 import { frameLinks } from '../shared/traceback.js';
@@ -927,8 +927,13 @@ function renderControls() {
   let html = '';
   for (const part of state.doc.parts) {
     const controls = definition(part.type).controls ?? [];
-    if (controls.length === 0) continue;
+    const readouts = definition(part.type).readouts ?? [];
+    if (controls.length === 0 && readouts.length === 0) continue;
     html += `<div class="control-part"><h3>${definition(part.type).name} <span class="status">${part.id}</span></h3>`;
+    // What the program is doing to an output part, which the 3D view shows only as movement.
+    for (const readout of readouts) {
+      html += `<p class="readout">${readout.label}: <span data-output="${part.id}:${readout.id}">${readoutText(readout, state.views[part.id]?.[readout.id])}</span></p>`;
+    }
     for (const control of controls) {
       const key = `${part.id}:${control.id}`;
       const value = state.controlValues[key] ?? control.default ?? 0;
@@ -1164,15 +1169,19 @@ let audio;
 const tones = new Map();
 const audioContext = () => (audio ??= new AudioContext());
 
-function setTone(id, frequency) {
+const TONE_GAIN = 0.04;
+
+// `level` is how loud the buzzer is, from 0 to 1: a passive one is quieter away from 50% duty.
+function setTone(id, frequency, level = 1) {
   const existing = tones.get(id);
-  if (!frequency) {
-    existing?.stop();
+  if (!frequency || !level) {
+    existing?.oscillator.stop();
     tones.delete(id);
     return;
   }
   if (existing) {
-    existing.frequency.value = frequency;
+    existing.oscillator.frequency.value = frequency;
+    existing.volume.gain.value = TONE_GAIN * level;
     return;
   }
   const context = audioContext();
@@ -1180,10 +1189,10 @@ function setTone(id, frequency) {
   const volume = context.createGain();
   oscillator.type = 'square';
   oscillator.frequency.value = frequency;
-  volume.gain.value = 0.04;
+  volume.gain.value = TONE_GAIN * level;
   oscillator.connect(volume).connect(context.destination);
   oscillator.start();
-  tones.set(id, oscillator);
+  tones.set(id, { oscillator, volume });
 }
 
 function stopSound() {
@@ -1240,13 +1249,22 @@ function oledImage(view) {
 
 // --- Messages from the extension ---
 
+function updateReadouts(part, view) {
+  for (const readout of (part && definition(part.type).readouts) ?? []) {
+    const element = $('controls').querySelector(`[data-output="${part.id}:${readout.id}"]`);
+    const text = readoutText(readout, view[readout.id]);
+    if (element && element.textContent !== text) element.textContent = text;
+  }
+}
+
 function applyFrame({ views, board, problems }) {
   for (const [id, view] of Object.entries(views)) {
     const part = partById(id);
     if (part?.type === 'oled-ssd1306' && view.pixels !== undefined) view.image = oledImage(view);
     state.views[id] = view;
-    if (view.tone !== undefined) setTone(id, view.tone);
+    if (view.tone !== undefined) setTone(id, view.tone, view.level);
     updatePart(id);
+    updateReadouts(part, view);
   }
   const boardText = JSON.stringify(board);
   if (boardText !== state.boardText) {

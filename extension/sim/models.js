@@ -23,6 +23,10 @@ const BATTERY_MAX_AMPS = 2;
 const POLARIZED_MICROFARADS = 1;
 const CAPACITOR_MAX_VOLTS = 16;
 const CAPACITOR_REVERSE_VOLTS = 0.5;
+// A passive piezo needs this much change in voltage across it to be heard.
+const PIEZO_SWING_VOLTS = 1;
+const ACTIVE_BUZZER_VOLTS = 2;
+const ACTIVE_BUZZER_HZ = 2300;
 
 // The meter's dial, in the order of its `mode` control.
 const METER_AMPS = 1;
@@ -653,17 +657,28 @@ export const MODELS = {
     }),
   },
 
+  // Neither kind makes a sound unless current can flow through it, so both legs must be wired.
+  // A passive piezo only moves when its voltage changes: it plays the frequency it is switched at,
+  // loudest at half duty, and a steady voltage is silent. An active one has its own oscillator and
+  // sounds whenever its + leg has power.
   piezo: {
     setup(ctx) {
       ctx.resistor('+', '-', 1000);
+      ctx.high = 0;
+      ctx.low = 0;
+    },
+    sample(ctx, phase) {
+      ctx[phase] = ctx.difference('+', '-');
     },
     view(ctx) {
-      const drive = ctx.pwm('+');
       if (ctx.props.kind === 'active') {
-        const on = ctx.difference('+', '-') > 2 || (drive && drive.duty > 0);
-        return { tone: on ? 2300 : 0 };
+        const on = Math.max(ctx.high, ctx.low) > ACTIVE_BUZZER_VOLTS;
+        return { tone: on ? ACTIVE_BUZZER_HZ : 0, level: on ? 1 : 0 };
       }
-      return { tone: drive && drive.duty > 0 ? drive.frequency : 0 };
+      const drive = ctx.pwm('+');
+      if (!drive || Math.abs(ctx.high - ctx.low) < PIEZO_SWING_VOLTS) return { tone: 0, level: 0 };
+      // The loudness of a square wave's fundamental, which peaks at 50% duty.
+      return { tone: drive.frequency, level: Math.round(Math.sin(Math.PI * drive.duty) * 100) / 100 };
     },
   },
   servo: {

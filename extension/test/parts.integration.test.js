@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { defaultProps, emptyCircuit } from '../shared/catalog.js';
+import { defaultProps, definition, emptyCircuit, readoutText } from '../shared/catalog.js';
 import { buildNets, pinKey } from '../shared/nets.js';
 import { Board } from '../sim/board-host.js';
 
@@ -117,6 +117,53 @@ print("done")
     wires: [['board:5V', 's:V+'], ['s:GND', 'board:GND1'], ['board:D9', 's:SIG']],
   });
   assert.equal(views.s.angle, 135);
+  assert.equal(readoutText(definition('servo').readouts[0], views.s[definition('servo').readouts[0].id]), '135°');
+});
+
+// Runs `setup` on D9 and reads the buzzer while the program is still going, as the pin is
+// released once it ends.
+async function buzzer(setup, { kind = 'passive', wires = [['board:D9', 'b:+'], ['b:-', 'board:GND1']] } = {}) {
+  const code = `import board, digitalio, pwmio, time
+${setup}
+time.sleep(0.2)
+print("PLAYING")
+while True:
+    time.sleep(1)
+`;
+  const { views } = await run({ code, until: 'PLAYING', parts: [['b', 'piezo', { kind }]], wires });
+  return views.b;
+}
+
+const PWM = (duty) => `pwm = pwmio.PWMOut(board.D9, duty_cycle=${duty}, frequency=440, variable_frequency=True)`;
+const HIGH = 'pin = digitalio.DigitalInOut(board.D9)\npin.switch_to_output(value=True)';
+
+test('a passive buzzer plays the frequency of its PWM pin', async () => {
+  const view = await buzzer(PWM(32768));
+  assert.deepEqual(view, { tone: 440, level: 1 });
+  assert.equal(readoutText(definition('piezo').readouts[0], view[definition('piezo').readouts[0].id]), '440 Hz');
+});
+
+test('a passive buzzer is quieter away from half duty', async () => {
+  const { tone, level } = await buzzer(PWM(8192));
+  assert.equal(tone, 440);
+  assert.ok(level > 0.3 && level < 0.45, `level ${level}`);
+});
+
+test('a passive buzzer is silent on a steady voltage', async () => {
+  assert.equal((await buzzer(PWM(65535))).tone, 0);
+  assert.equal((await buzzer(HIGH)).tone, 0);
+});
+
+test('a buzzer with a leg not wired is silent', async () => {
+  assert.equal((await buzzer(PWM(32768), { wires: [['board:D9', 'b:+']] })).tone, 0);
+  assert.equal((await buzzer(PWM(32768), { wires: [['b:-', 'board:GND1']] })).tone, 0);
+  assert.equal((await buzzer(HIGH, { kind: 'active', wires: [['board:D9', 'b:+']] })).tone, 0);
+});
+
+test('an active buzzer sounds whenever its + leg has power', async () => {
+  assert.deepEqual(await buzzer(HIGH, { kind: 'active' }), { tone: 2300, level: 1 });
+  assert.equal((await buzzer('pin = digitalio.DigitalInOut(board.D9)\npin.switch_to_output(value=False)', { kind: 'active' })).tone, 0);
+  assert.equal((await buzzer(HIGH, { kind: 'active', wires: [['board:D9', 'b:-'], ['b:+', 'board:GND1']] })).tone, 0);
 });
 
 test('NeoPixel strip', async () => {

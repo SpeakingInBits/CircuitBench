@@ -46,8 +46,9 @@ on the canvas.
 
 Press **Run**, or F5 while the simulator has the focus. **Stop** is Shift+F5. While it runs, press
 parts on the canvas, or use the controls on the right: Tab reaches them, and Space or Enter holds a
-button down. The **Serial console** shows `print()` output: click it and press Ctrl+C to stop your
-program and reach the REPL. Scroll up to read earlier output, and back to the end to follow it again.
+button down. The controls also show the angle a servo is set to and the tone a buzzer plays. The
+**Serial console** shows `print()` output: click it and press Ctrl+C to stop your program and reach
+the REPL. Scroll up to read earlier output, and back to the end to follow it again.
 
 Run saves your open project files first, so it always runs what you see. Like a real board, saving
 `code.py`, or any file in the project such as one in `lib`, while your program runs restarts it with
@@ -158,7 +159,9 @@ To work on the diagram outside VS Code, serve the `extension` folder over HTTP a
 
 The 3D view button shows the circuit in 3D. Students wire in the 2D canvas, but they can pick up parts and move them in 3D: drag a part to move it, Ctrl-click to select several, and press R, F or Delete as in 2D. Moves snap to the grid and land in breadboard holes, and undo puts them back. While a program runs, clicking a part works as it does in 2D: press a button, flip a switch or change the multimeter's mode. Dragging the table, or the arrow keys, turns the view. Right-drag or Shift-drag pans it, as right-drag does on the 2D canvas. Smoke, warning signs, grey parts and notes only show on the 2D canvas. Close the view to free its memory.
 
-Parts need no 3D model: each one gets a body from the largest shape in its 2D art, with that art on top. To model a part by hand, add it to `BUILDERS` in `webview/scene3d.js`.
+Every part has a 3D model, built from simple shapes in `webview/models3d.js`. Lights glow, knobs and switches move, and screens show what the program writes. Pin names and other labels are printed on the models. A flipped part is mirrored, but its labels still read the right way round.
+
+A new part appears in 3D before it has a model: it gets a plain body from the largest shape in its 2D art, with that art on top. To model it, add a builder to `BUILDERS` in `webview/models3d.js`. `test/models3d.test.js` fails until every part in the catalog has one.
 
 three.js 0.186.1 is kept in `webview/vendor/three`, copied from the npm package's `build` folder with its licence. It loads the first time the view opens.
 
