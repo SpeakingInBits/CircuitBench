@@ -621,7 +621,8 @@ canvas.addEventListener('pointerdown', (event) => {
   const wireElement = event.target.closest?.('[data-wire]');
   const startPan = () => { state.panning = { x: event.clientX - state.pan.x, y: event.clientY - state.pan.y }; };
 
-  if (event.button === 1 || (event.button === 0 && event.altKey)) {
+  // The right and middle buttons only move the view, so they never pick, wire or press what is under them.
+  if (event.button !== 0 || event.altKey) {
     startPan();
     return;
   }
@@ -792,6 +793,8 @@ canvas.addEventListener('dblclick', (event) => {
 
 canvas.addEventListener('pointerleave', () => showTooltip(null));
 canvas.addEventListener('pointerup', endPointer);
+// Right-dragging pans, so the menu must not open when the button comes up.
+canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 canvas.addEventListener('pointercancel', endPointer);
 
 canvas.addEventListener('wheel', (event) => {
@@ -1030,7 +1033,8 @@ function holdControl(button, target, events) {
 }
 
 $('controls').addEventListener('pointerdown', (event) => {
-  if (holdKey(event.target)) holdControl(event.target, window, ['pointerup', 'pointercancel']);
+  // Only the main button presses, as with a click, so a right-click does not hold a button down.
+  if (event.button === 0 && holdKey(event.target)) holdControl(event.target, window, ['pointerup', 'pointercancel']);
 });
 
 // Space or Enter holds a button down for as long as the key is, so the keyboard works like the mouse.

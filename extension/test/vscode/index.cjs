@@ -164,6 +164,17 @@ async function run() {
     report.steps.undoRedo = `${undone.wires} then ${redone.wires}`;
     if (undone.wires !== 7 || redone.wires !== 8) throw new Error('Undo or redo failed');
 
+    // Right-dragging from a pin pans the view, and starts no wire and moves no part.
+    const beforeRight = await step({ action: 'doc' });
+    const selectedBefore = JSON.stringify((await step({ action: 'read' })).selection);
+    const editRight = await step({ action: 'rightDrag', point: pinOf(beforeRight, resistor, '1', catalog), by: { x: -30, y: 20 } });
+    const afterRight = await step({ action: 'doc' });
+    report.steps.rightDragEditing = editRight.panned;
+    if (editRight.panned.x !== -30 || editRight.panned.y !== 20) throw new Error(`Right-drag did not pan: ${JSON.stringify(editRight)}`);
+    if (editRight.during.wiring || JSON.stringify(editRight.selection) !== selectedBefore) throw new Error(`Right-drag picked something: ${JSON.stringify(editRight)}`);
+    if (JSON.stringify(afterRight) !== JSON.stringify(beforeRight)) throw new Error('Right-drag changed the circuit');
+    await step({ action: 'fit' });
+
     // Saved next to the code.
     await new Promise((resolve) => setTimeout(resolve, 500));
     const saved = JSON.parse(fs.readFileSync(path.join(folder, 'circuit.json'), 'utf8'));
@@ -207,6 +218,19 @@ async function run() {
     report.steps.ledBrightness = lit;
     await step({ action: 'release' });
     await waitBright(step, led, false);
+
+    // The right button only pans: dragging from the button neither presses nor picks it, and
+    // right-clicking Press in the controls panel does not hold it down.
+    const pressedKey = `${button}:pressed`;
+    const rightDrag = await step({ action: 'rightDrag', point: { x: part.x + 10, y: part.y + 15 }, by: { x: 40, y: 30 } });
+    report.steps.rightDrag = rightDrag;
+    if (rightDrag.panned.x !== 40 || rightDrag.panned.y !== 30) throw new Error(`Right-drag did not pan: ${JSON.stringify(rightDrag)}`);
+    if (rightDrag.during.held || rightDrag.during.values[pressedKey] === 1) throw new Error('Right-drag pressed the button');
+    if (rightDrag.menuShown) throw new Error('Right-drag let the context menu open');
+    const rightPress = await step({ action: 'rightPressControl', selector: `[data-hold="${pressedKey}"]`, key: pressedKey });
+    if (rightPress.value === 1) throw new Error('Right-clicking Press in the controls panel held the button');
+    await step({ action: 'fit' });
+
     await step({ action: 'slider', key: `${pot}:position`, value: 0.25 });
     report.steps.sliderToConsoleMs = (await step({ action: 'waitConsole', text: 'POT 10' })).ms;
 
