@@ -235,10 +235,12 @@ export const CATALOG = {
     name: 'Piezo buzzer', category: 'Output', w: 20, h: 20, description: 'Passive: plays the frequency it is driven at.',
     pins: [pin('+', 0, 20), pin('-', 20, 20)],
     props: { kind: { label: 'Type', type: 'choice', choices: ['passive', 'active'], default: 'passive' } },
+    readouts: [{ id: 'tone', label: 'Tone', unit: 'Hz', zero: 'off' }],
   },
   servo: {
     name: 'Micro servo', category: 'Output', w: 40, h: 50,
     pins: [pin('GND', 10, 50), pin('V+', 20, 50), pin('SIG', 30, 50, 'Signal')],
+    readouts: [{ id: 'angle', label: 'Angle', unit: '°', default: 90 }],
   },
   'dc-motor': {
     name: 'DC motor', category: 'Output', w: 30, h: 30, description: 'Needs a transistor or driver, not a bare pin.',
@@ -359,6 +361,15 @@ export function definition(type) {
   const entry = CATALOG[type];
   if (!entry) throw new Error(`Unknown part type: ${type}`);
   return entry;
+}
+
+// What a part's readout shows for a value from the simulation, such as "45°" or "440 Hz".
+// A part with no value yet shows the readout's default, as the part starts that way.
+export function readoutText(readout, value) {
+  const shown = Math.round(value ?? readout.default ?? 0);
+  if (shown === 0 && readout.zero) return readout.zero;
+  const unit = readout.unit ?? '';
+  return `${shown}${/^\w/.test(unit) ? ' ' : ''}${unit}`;
 }
 
 export function defaultProps(type) {
