@@ -45,6 +45,7 @@ on the canvas.
 ## Run it
 
 Press **Run**. While it runs, press parts on the canvas, or use the controls on the right. The
+controls also show the angle a servo is set to and the tone a buzzer plays. The
 **Serial console** shows `print()` output: click it and press Ctrl+C to stop your program and reach
 the REPL.
 

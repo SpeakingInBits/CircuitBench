@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { defaultProps, emptyCircuit } from '../shared/catalog.js';
+import { defaultProps, definition, emptyCircuit, readoutText } from '../shared/catalog.js';
 import { buildNets, pinKey } from '../shared/nets.js';
 import { Board } from '../sim/board-host.js';
 
@@ -117,6 +117,24 @@ print("done")
     wires: [['board:5V', 's:V+'], ['s:GND', 'board:GND1'], ['board:D9', 's:SIG']],
   });
   assert.equal(views.s.angle, 135);
+  assert.equal(readoutText(definition('servo').readouts[0], views.s[definition('servo').readouts[0].id]), '135°');
+});
+
+test('a passive buzzer plays the frequency of its PWM pin', async () => {
+  const code = `import board, pwmio, time
+pwm = pwmio.PWMOut(board.D9, duty_cycle=32768, frequency=440, variable_frequency=True)
+time.sleep(0.2)
+print("PLAYING")
+while True:
+    time.sleep(1)
+`;
+  // Read while it plays: the pin is released once the program ends.
+  const { views } = await run({
+    code, until: 'PLAYING', parts: [['b', 'piezo']],
+    wires: [['board:D9', 'b:+'], ['b:-', 'board:GND1']],
+  });
+  assert.equal(views.b.tone, 440);
+  assert.equal(readoutText(definition('piezo').readouts[0], views.b[definition('piezo').readouts[0].id]), '440 Hz');
 });
 
 test('NeoPixel strip', async () => {
