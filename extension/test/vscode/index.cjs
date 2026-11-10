@@ -584,6 +584,15 @@ async function run() {
     await step({ action: 'key', key: 'z', ctrl: true });
     const putBack = (await step({ action: 'doc' })).parts.find((p) => p.id === pushed);
     if (putBack.x !== resting.x || putBack.y !== resting.y) throw new Error('Undo did not put back a part moved in 3D');
+
+    // Right-dragging from a part pans the 3D view, and neither moves the part nor turns the view.
+    const cameraBefore = (await step({ action: 'read' })).view3d.camera;
+    const rightDrag3d = await step({ action: 'drag3d', id: pushed, by: { x: 80, y: 40 }, right: true });
+    report.steps.rightDrag3d = { before: cameraBefore, after: rightDrag3d.camera };
+    if (rightDrag3d.x !== resting.x || rightDrag3d.y !== resting.y) throw new Error('Right-dragging in 3D moved the part');
+    const { camera: cameraAfter } = rightDrag3d;
+    if (cameraAfter.turn !== cameraBefore.turn || cameraAfter.tilt !== cameraBefore.tilt) throw new Error('Right-dragging in 3D turned the view');
+    if (cameraAfter.x === cameraBefore.x && cameraAfter.z === cameraBefore.z) throw new Error('Right-dragging in 3D did not pan');
     await step({ action: 'click', selector: '#view3d' });
 
     for (const name of ['circuit.png', 'diagram.png']) {

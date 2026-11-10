@@ -156,7 +156,7 @@ To work on the diagram outside VS Code, serve the `extension` folder over HTTP a
 
 ![The LED and button example in 3D: the board beside a breadboard, with jumper wires arching between them and the LED lit green](images/screenshots/3d-view.png)
 
-The 3D view button shows the circuit in 3D. Students wire in the 2D canvas, but they can pick up parts and move them in 3D: drag a part to move it, Ctrl-click to select several, and press R, F or Delete as in 2D. Moves snap to the grid and land in breadboard holes, and undo puts them back. While a program runs, clicking a part works as it does in 2D: press a button, flip a switch or change the multimeter's mode. Dragging the table, or right-dragging anywhere, turns the view, and Shift-drag pans it. Smoke, warning signs, grey parts and notes only show on the 2D canvas. Close the view to free its memory.
+The 3D view button shows the circuit in 3D. Students wire in the 2D canvas, but they can pick up parts and move them in 3D: drag a part to move it, Ctrl-click to select several, and press R, F or Delete as in 2D. Moves snap to the grid and land in breadboard holes, and undo puts them back. While a program runs, clicking a part works as it does in 2D: press a button, flip a switch or change the multimeter's mode. Dragging the table, or the arrow keys, turns the view. Right-drag or Shift-drag pans it, as right-drag does on the 2D canvas. Smoke, warning signs, grey parts and notes only show on the 2D canvas. Close the view to free its memory.
 
 Parts need no 3D model: each one gets a body from the largest shape in its 2D art, with that art on top. To model a part by hand, add it to `BUILDERS` in `webview/scene3d.js`.
 
