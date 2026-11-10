@@ -147,7 +147,7 @@ const ART = {
   thermistor: (part, view) => lead(0, 10, 3, 2) + lead(10, 10, 7, 2) + circle(5, -1, 5, '#1d4f3a') + text(5, -9, `${view?.celsius ?? ''}`, 5, '#aaa'),
   fsr: (part, view) => lead(0, 20, 3, 13) + lead(10, 20, 7, 13) + rect(0, 6, 10, 8, '#222') + circle(5, -3, 10, '#2a2a2a', 'stroke="#555"') + circle(5, -3, 6, '#888', `opacity="${(view?.force ?? 0) * 0.9 + 0.1}"`),
   tmp36: () => [0, 10, 20].map((x) => lead(x, 10, x, 2)).join('') + `<path d="M0 3v-5a10 10 0 0 1 20 0v5z" fill="#222"/>` + text(10, 0, 'TMP36', 4) + pinLabels(['+V', 'OUT', 'GND'], 10),
-  dht: (part, view) => rect(-4, -14, 42, 40, part.props?.model === 'DHT22' ? '#ececec' : '#3a79c4', 2) + `<path d="M0 -10h30v24h-30z" fill="none" stroke="#0004"/>` + text(15, 6, part.props?.model ?? 'DHT11', 6, part.props?.model === 'DHT22' ? '#333' : '#fff')
+  dht: (part, view) => rect(-4, -14, 42, 40, part.props?.model === 'DHT22' ? '#ececec' : '#3a79c4', 2) + `<path d="M0 -10h30v24h-30z" fill="none" stroke="#0004"/>` + text(15, 6, escapeXml(part.props?.model ?? 'DHT11'), 6, part.props?.model === 'DHT22' ? '#333' : '#fff')
     + [0, 10, 20, 30].map((x) => lead(x, 30, x, 24)).join('') + pinLabels(['VCC', 'DATA', 'NC', 'GND'], 30),
   ds18b20: () => [0, 10, 20].map((x) => lead(x, 10, x, 2)).join('') + `<path d="M0 3v-5a10 10 0 0 1 20 0v5z" fill="#222"/>` + text(10, 0, 'DS18', 4) + pinLabels(['GND', 'DQ', 'VDD'], 10),
   hcsr04: (part, view) => rect(-6, -2, 52, 38, '#1b4f8f', 2) + circle(8, 14, 11, '#b8bcc2', 'stroke="#555"') + circle(8, 14, 7, '#333') + circle(32, 14, 11, '#b8bcc2', 'stroke="#555"') + circle(32, 14, 7, '#333')
@@ -206,7 +206,7 @@ const ART = {
   'shift-register': () => chip(70, '74HC595', ['VCC', 'Q0', 'DS', 'OE', 'STCP', 'SHCP', 'MR', 'Q7S'], ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'GND']),
   l293d: () => chip(70, 'L293D', ['VCC', 'IN4', 'OUT4', 'GND', 'GND', 'OUT3', 'IN3', 'EN2'], ['EN1', 'IN1', 'OUT1', 'GND', 'GND', 'OUT2', 'IN2', 'VS']),
 
-  battery: (part) => lead(0, 40, 6, 32, '#d33', 2) + lead(30, 40, 24, 32, '#333', 2) + rect(0, -4, 30, 36, '#222', 2) + rect(0, -4, 30, 12, '#c9a94a', 2) + text(15, 20, `${part.props?.volts ?? 9}V`, 8),
+  battery: (part) => lead(0, 40, 6, 32, '#d33', 2) + lead(30, 40, 24, 32, '#333', 2) + rect(0, -4, 30, 36, '#222', 2) + rect(0, -4, 30, 12, '#c9a94a', 2) + text(15, 20, `${escapeXml(part.props?.volts ?? 9)}V`, 8),
 
   multimeter(part, view) {
     const mode = view?.mode ?? 0;
@@ -254,8 +254,9 @@ export function partArt(part, view) {
   return part.flip ? unmirrorText(art) : art;
 }
 
+// A circuit file can come from anyone, so only numbers go into the markup.
 export function partTransform(part) {
-  return `translate(${part.x} ${part.y}) rotate(${part.rotation ?? 0})${part.flip ? ' scale(-1 1)' : ''}`;
+  return `translate(${Number(part.x) || 0} ${Number(part.y) || 0}) rotate(${Number(part.rotation) || 0})${part.flip ? ' scale(-1 1)' : ''}`;
 }
 
 // A student's name for a part, drawn upright under it however the part is turned.

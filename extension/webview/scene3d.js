@@ -386,7 +386,8 @@ export function createScene3d(container, {
   let looking = null; // Turning or panning the view: { x, y, panning, travel, clears }
   let holding = false; // Dragging a part.
   let pressing = false;
-  const pans = (event) => event.shiftKey || event.altKey || event.button === 1;
+  // The right and middle buttons pan, as on the 2D canvas.
+  const pans = (event) => event.shiftKey || event.altKey || event.button === 1 || event.button === 2;
   canvas.addEventListener('contextmenu', (event) => event.preventDefault());
   canvas.addEventListener('pointerdown', (event) => {
     canvas.focus();
@@ -517,6 +518,7 @@ export function createScene3d(container, {
       parts: parts.size,
       wires: wireCount,
       selected: marks.children.length,
+      camera: { x: Math.round(orbit.target.x), z: Math.round(orbit.target.z), turn: orbit.turn, tilt: orbit.tilt },
       textures: renderer.info.memory.textures,
       geometries: renderer.info.memory.geometries,
       triangles: renderer.info.render.triangles,

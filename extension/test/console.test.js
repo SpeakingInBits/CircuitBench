@@ -50,4 +50,5 @@ test('reset forgets a held back sequence', () => {
 test('backspace removes the last character', () => {
   assert.equal(typeInto('abc', '\b\bz'), 'az');
   assert.equal(typeInto('', '\bq'), 'q');
+  assert.equal(typeInto('abc', 'def\n'), 'abcdef\n');
 });

@@ -162,7 +162,7 @@ function renderWires() {
     const d = wirePath(state.doc, wire);
     if (!d) continue;
     const classes = `wire${isSelected('wire', wire.id) ? ' selected' : ''}${state.idle?.wires.has(wire) ? ' idle' : ''}`;
-    html += `<path class="${classes}" d="${d}" stroke="${wire.color}"/><path class="wire-hit" data-wire="${wire.id}" d="${d}"/>`;
+    html += `<path class="${classes}" d="${d}" stroke="${escapeXml(wire.color)}"/><path class="wire-hit" data-wire="${escapeXml(wire.id)}" d="${d}"/>`;
   }
   $('layer-wires').innerHTML = html;
 }
@@ -203,7 +203,11 @@ function renderOverlay(pointer) {
     html += `<circle class="pin-mark" cx="${x}" cy="${y}" r="2.6"/>`;
     for (const mark of state.hoverNet ?? []) html += `<circle class="net-mark" cx="${mark.x}" cy="${mark.y}" r="3.2"/>`;
   }
-  $('layer-overlay').innerHTML = html;
+  // The pointer moves far more often than the overlay changes.
+  if (html !== state.overlayHtml) {
+    state.overlayHtml = html;
+    $('layer-overlay').innerHTML = html;
+  }
   state.scene3d?.showSelection(selectedParts().map((part) => part.id));
 }
 
@@ -617,7 +621,8 @@ canvas.addEventListener('pointerdown', (event) => {
   const wireElement = event.target.closest?.('[data-wire]');
   const startPan = () => { state.panning = { x: event.clientX - state.pan.x, y: event.clientY - state.pan.y }; };
 
-  if (event.button === 1 || (event.button === 0 && event.altKey)) {
+  // The right and middle buttons only move the view, so they never pick, wire or press what is under them.
+  if (event.button !== 0 || event.altKey) {
     startPan();
     return;
   }
@@ -788,6 +793,8 @@ canvas.addEventListener('dblclick', (event) => {
 
 canvas.addEventListener('pointerleave', () => showTooltip(null));
 canvas.addEventListener('pointerup', endPointer);
+// Right-dragging pans, so the menu must not open when the button comes up.
+canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 canvas.addEventListener('pointercancel', endPointer);
 
 canvas.addEventListener('wheel', (event) => {
@@ -822,9 +829,9 @@ window.addEventListener('keydown', (event) => {
     flipSelection();
   } else if (nudge && !mod) {
     nudgeSelection(...nudge);
-  } else if (mod && key === 'z') {
+  } else if (mod && key === 'z' && !event.shiftKey) {
     restore(state.undo, state.redo);
-  } else if (mod && key === 'y') {
+  } else if (mod && (key === 'y' || key === 'z')) {
     restore(state.redo, state.undo);
   } else if (mod && key === 'a') {
     selectAll();
@@ -947,7 +954,15 @@ function renderControls() {
     }
     html += '</div>';
   }
+  // Redrawing drops the keyboard's place, so the same control gets the focus back.
+  const focused = $('controls').contains(document.activeElement) ? controlSelector(document.activeElement) : null;
   $('controls').innerHTML = html;
+  if (focused) $('controls').querySelector(focused)?.focus();
+}
+
+// Finds a control again after the list is redrawn.
+function controlSelector(element) {
+  return Object.entries(element.dataset).map(([name, value]) => `[data-${name}="${value}"]`).join('');
 }
 
 // The new value for a property, or undefined if what was typed cannot be used.
@@ -977,7 +992,7 @@ $('details').addEventListener('change', (event) => {
       return;
     }
     snapshot();
-    part.props[key] = value;
+    (part.props ??= {})[key] = value;
     changed();
   }
 });
@@ -1009,16 +1024,29 @@ $('controls').addEventListener('input', (event) => {
   if (readout) readout.textContent = `${value}${event.target.dataset.unit}`;
 });
 
-$('controls').addEventListener('pointerdown', (event) => {
-  const hold = event.target.dataset.hold ?? event.target.dataset.key;
-  if (!hold) return;
-  const [part, control] = splitKey(hold);
-  sendControl(part, control, Number(event.target.dataset.value ?? 1));
+const holdKey = (button) => button.dataset.hold ?? button.dataset.key;
+
+// Presses a momentary control, and lets it go again on the first of `events` that `target` sees.
+function holdControl(button, target, events) {
+  const [part, control] = splitKey(holdKey(button));
+  sendControl(part, control, Number(button.dataset.value ?? 1));
   const release = () => {
     sendControl(part, control, 0);
-    window.removeEventListener('pointerup', release);
+    for (const name of events) target.removeEventListener(name, release);
   };
-  window.addEventListener('pointerup', release);
+  for (const name of events) target.addEventListener(name, release);
+}
+
+$('controls').addEventListener('pointerdown', (event) => {
+  // Only the main button presses, as with a click, so a right-click does not hold a button down.
+  if (event.button === 0 && holdKey(event.target)) holdControl(event.target, window, ['pointerup', 'pointercancel']);
+});
+
+// Space or Enter holds a button down for as long as the key is, so the keyboard works like the mouse.
+$('controls').addEventListener('keydown', (event) => {
+  if ((event.key !== ' ' && event.key !== 'Enter') || !holdKey(event.target)) return;
+  event.preventDefault();
+  if (!event.repeat) holdControl(event.target, event.target, ['keyup', 'blur']);
 });
 
 $('controls').addEventListener('click', (event) => {
@@ -1039,6 +1067,7 @@ $('controls').addEventListener('click', (event) => {
 
 // --- Serial console ---
 
+const CONSOLE_MAX_CHARS = 60000;
 const consoleElement = $('console');
 const serialFilter = new SerialFilter();
 let consoleText = '';
@@ -1065,13 +1094,17 @@ function renderConsole() {
   consoleElement.replaceChildren(...pieces);
 }
 
+const atConsoleEnd = () => consoleElement.scrollHeight - consoleElement.scrollTop - consoleElement.clientHeight < 4;
+
 function appendSerial(chunk) {
   const { text, title } = serialFilter.push(chunk);
   if (title !== undefined) $('board-title').textContent = title;
   if (!text) return;
-  consoleText = typeInto(consoleText, text).slice(-60000);
+  // The console follows new output only from its end, so a student can scroll back and read.
+  const following = atConsoleEnd();
+  consoleText = typeInto(consoleText, text).slice(-CONSOLE_MAX_CHARS);
   renderConsole();
-  consoleElement.scrollTop = consoleElement.scrollHeight;
+  if (following) consoleElement.scrollTop = consoleElement.scrollHeight;
 }
 
 consoleElement.addEventListener('click', (event) => {
@@ -1102,8 +1135,12 @@ function showTab(name) {
   consoleElement.hidden = !onConsole;
   $('library-hint').hidden = !onConsole || !state.libraryHint;
   $('problems').hidden = onConsole;
-  $('tab-console').classList.toggle('active', onConsole);
-  $('tab-problems').classList.toggle('active', !onConsole);
+  for (const [tab, active] of [[$('tab-console'), onConsole], [$('tab-problems'), !onConsole]]) {
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', active);
+  }
+  // A hidden console forgets where it was scrolled to.
+  if (onConsole) consoleElement.scrollTop = consoleElement.scrollHeight;
 }
 
 // Compares the program with the circuit again, after either one changes.
@@ -1182,14 +1219,20 @@ function playSamples(samples, rate, channels) {
 
 // --- OLED ---
 
+// Every frame is drawn on the same surface, because a display can change 30 times a second.
+let oled;
+
 function oledImage(view) {
   if (!view.on) return null;
   const bytes = Uint8Array.from(atob(view.pixels), (c) => c.charCodeAt(0));
-  const surface = document.createElement('canvas');
-  surface.width = 128;
-  surface.height = 64;
-  const context = surface.getContext('2d');
-  const image = context.createImageData(128, 64);
+  if (!oled) {
+    const surface = document.createElement('canvas');
+    surface.width = 128;
+    surface.height = 64;
+    const context = surface.getContext('2d');
+    oled = { surface, context, image: context.createImageData(128, 64) };
+  }
+  const { surface, context, image } = oled;
   for (let y = 0; y < 64; y++) {
     for (let x = 0; x < 128; x++) {
       const on = (bytes[(y >> 3) * 128 + x] >> (y & 7)) & 1;

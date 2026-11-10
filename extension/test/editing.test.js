@@ -189,6 +189,17 @@ test('images cover the whole circuit and escape what students type', () => {
   assert.ok(!diagram.svg.includes('var(--'), 'a saved file has no theme to read');
 });
 
+test('a circuit file from someone else cannot add its own markup to an image', () => {
+  const doc = sample();
+  const markup = '"/><image href="x"/>';
+  doc.wires[0].color = markup;
+  doc.parts.push(part('d1', 'dht', 300, 300, { rotation: `0)${markup}`, props: { model: markup } }));
+  doc.parts.push(part('b1', 'battery', 400, 300, { props: { volts: markup } }));
+  const { svg } = circuitImage(doc);
+  assert.ok(!svg.includes('<image'), svg);
+  assert.ok(svg.includes('translate(300 300) rotate(0)'), 'a turn that is not a number is left out');
+});
+
 const packaged = (overrides = {}) => JSON.stringify({ ...JSON.parse(createPackage({
   name: 'blink', circuit: emptyCircuit(), files: { '/code.py': 'print("hi")\n', '/lib/thing.mpy': Buffer.from([0, 255, 1]) },
 })), ...overrides });

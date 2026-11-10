@@ -77,21 +77,47 @@ export async function runTestStep(step, { state, toScreen, fit }) {
       pointer('pointerdown', surface, position);
       return { selection: state.selection, held: state.held.size };
     }
-    // Drags a part in 3D by a number of pixels on the screen.
+    // Drags from a part in 3D by a number of pixels on the screen, with the main button unless `step.right`.
     case 'drag3d': {
       const surface = document.querySelector('#stage3d canvas');
       const from = state.scene3d.screenPoint(step.id);
       const to = { clientX: from.clientX + step.by.x, clientY: from.clientY + step.by.y };
-      pointer('pointerdown', surface, from);
-      pointer('pointermove', surface, { clientX: (from.clientX + to.clientX) / 2, clientY: (from.clientY + to.clientY) / 2 });
-      pointer('pointermove', surface, to);
-      pointer('pointerup', surface, to);
+      const down = step.right ? { button: 2, buttons: 2 } : {};
+      pointer('pointerdown', surface, from, down);
+      pointer('pointermove', surface, { clientX: (from.clientX + to.clientX) / 2, clientY: (from.clientY + to.clientY) / 2 }, { ...down, button: -1 });
+      pointer('pointermove', surface, to, { ...down, button: -1 });
+      pointer('pointerup', surface, to, step.right ? { button: 2 } : {});
       const part = state.doc.parts.find((p) => p.id === step.id);
-      return { x: part.x, y: part.y, selection: state.selection, selected: state.scene3d.info().selected };
+      const { selected, camera } = state.scene3d.info();
+      return { x: part.x, y: part.y, selection: state.selection, selected, camera };
     }
     case 'release3d': {
       pointer('pointerup', document.querySelector('#stage3d canvas'), { clientX: 0, clientY: 0 });
       return { held: state.held.size };
+    }
+    // Right-drags from a point on the canvas, which should only move the view.
+    case 'rightDrag': {
+      const start = at(step.point);
+      const to = { clientX: start.position.clientX + step.by.x, clientY: start.position.clientY + step.by.y };
+      const pan = { ...state.pan };
+      pointer('pointerdown', start.target, start.position, { button: 2, buttons: 2 });
+      const during = { held: state.held.size, wiring: !!state.wiring, values: { ...state.controlValues } };
+      pointer('pointermove', canvas, to, { button: -1, buttons: 2 });
+      pointer('pointerup', canvas, to, { button: 2 });
+      // Read on the canvas itself, because VS Code's own page cancels the event further up and shows its menu.
+      let menuShown = true;
+      const look = (event) => { menuShown = !event.defaultPrevented; };
+      canvas.addEventListener('contextmenu', look, { once: true });
+      canvas.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, ...to }));
+      return { panned: { x: Math.round(state.pan.x - pan.x), y: Math.round(state.pan.y - pan.y) }, during, selection: state.selection, menuShown };
+    }
+    // Right-clicks a button in the controls panel and reads its value while it is down.
+    case 'rightPressControl': {
+      const control = document.querySelector(step.selector);
+      pointer('pointerdown', control, {}, { button: 2, buttons: 2 });
+      const value = state.controlValues[step.key];
+      pointer('pointerup', control, {}, { button: 2 });
+      return { value: value ?? null };
     }
     case 'release': {
       pointer('pointerup', canvas, { clientX: 0, clientY: 0 });

@@ -34,7 +34,7 @@ computer or hand it in, see [Export and import](#export-and-import).
 | Line parts up | Select two or more, then press Left, Center, Right, Top, Middle or Bottom |
 | Copy, cut, paste | Ctrl+C, Ctrl+X, Ctrl+V. Ctrl+D duplicates |
 | Delete | Select it and press Delete |
-| Undo or redo | Ctrl+Z or Ctrl+Y |
+| Undo or redo | Ctrl+Z, and Ctrl+Y or Ctrl+Shift+Z |
 | Pan or zoom | Drag the background, or use the mouse wheel |
 
 Hover over a pin to see its name and everything connected to it. Select a part to give it a label,
@@ -44,10 +44,11 @@ on the canvas.
 
 ## Run it
 
-Press **Run**. While it runs, press parts on the canvas, or use the controls on the right. The
-controls also show the angle a servo is set to and the tone a buzzer plays. The
+Press **Run**, or F5 while the simulator has the focus. **Stop** is Shift+F5. While it runs, press
+parts on the canvas, or use the controls on the right: Tab reaches them, and Space or Enter holds a
+button down. The controls also show the angle a servo is set to and the tone a buzzer plays. The
 **Serial console** shows `print()` output: click it and press Ctrl+C to stop your program and reach
-the REPL.
+the REPL. Scroll up to read earlier output, and back to the end to follow it again.
 
 Run saves your open project files first, so it always runs what you see. Like a real board, saving
 `code.py`, or any file in the project such as one in `lib`, while your program runs restarts it with
@@ -156,7 +157,7 @@ To work on the diagram outside VS Code, serve the `extension` folder over HTTP a
 
 ![The LED and button example in 3D: the board beside a breadboard, with jumper wires arching between them and the LED lit green](images/screenshots/3d-view.png)
 
-The 3D view button shows the circuit in 3D. Students wire in the 2D canvas, but they can pick up parts and move them in 3D: drag a part to move it, Ctrl-click to select several, and press R, F or Delete as in 2D. Moves snap to the grid and land in breadboard holes, and undo puts them back. While a program runs, clicking a part works as it does in 2D: press a button, flip a switch or change the multimeter's mode. Dragging the table, or right-dragging anywhere, turns the view, and Shift-drag pans it. Smoke, warning signs, grey parts and notes only show on the 2D canvas. Close the view to free its memory.
+The 3D view button shows the circuit in 3D. Students wire in the 2D canvas, but they can pick up parts and move them in 3D: drag a part to move it, Ctrl-click to select several, and press R, F or Delete as in 2D. Moves snap to the grid and land in breadboard holes, and undo puts them back. While a program runs, clicking a part works as it does in 2D: press a button, flip a switch or change the multimeter's mode. Dragging the table, or the arrow keys, turns the view. Right-drag or Shift-drag pans it, as right-drag does on the 2D canvas. Smoke, warning signs, grey parts and notes only show on the 2D canvas. Close the view to free its memory.
 
 Every part has a 3D model, built from simple shapes in `webview/models3d.js`. Lights glow, knobs and switches move, and screens show what the program writes. Pin names and other labels are printed on the models. A flipped part is mirrored, but its labels still read the right way round.
 
